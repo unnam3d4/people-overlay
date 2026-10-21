@@ -34,6 +34,13 @@ const (
  menuIDTest=150
  menuIDNumbers=152
  menuIDCapture=153
+ menuIDAlarmToggle=160
+ menuIDAlarmShort=161
+ menuIDAlarmFull=162
+ menuIDAlarmPause15=163
+ menuIDAlarmPause30=164
+ menuIDAlarmPause60=165
+ menuIDAlarmTest=166
  menuIDExit=199
  wmRButtonUp=0x0205
  wmLButtonUp=0x0202
@@ -169,6 +176,14 @@ func(t *appTray)popupMenu(){
  appendMenu(menu,menuIDSensHigh,"Чувствительность: высокая",sensitivity.Load()==3)
  appendMenu(menu,menuIDContrast,"Усилить контраст камер",contrastMode.Load())
  separator(menu)
+ appendMenu(menu,menuIDAlarmToggle,"Звуковая тревога (Ctrl+Alt+F7)",alarmEnabled.Load())
+ appendMenu(menu,menuIDAlarmShort,"Сигнал: короткий, 3 импульса",!alarmFull.Load())
+ appendMenu(menu,menuIDAlarmFull,"Сигнал: полный, 8 импульсов",alarmFull.Load())
+ appendMenu(menu,menuIDAlarmPause15,"Пауза тревоги: 15 секунд",alarmPauseSecs.Load()==15)
+ appendMenu(menu,menuIDAlarmPause30,"Пауза тревоги: 30 секунд",alarmPauseSecs.Load()==30)
+ appendMenu(menu,menuIDAlarmPause60,"Пауза тревоги: 60 секунд",alarmPauseSecs.Load()==60)
+ appendMenu(menu,menuIDAlarmTest,"Прослушать сигнал",false)
+ separator(menu)
  appendMenu(menu,menuIDGreen,"Цвет: зелёный",colour.Load()==1)
  appendMenu(menu,menuIDRed,"Цвет: красный",colour.Load()==2)
  appendMenu(menu,menuIDOrange,"Цвет: оранжевый",colour.Load()==3)
@@ -201,6 +216,13 @@ func(t *appTray)action(id uintptr){
  case menuIDSensNormal:sensitivity.Store(2)
  case menuIDSensHigh:sensitivity.Store(3)
  case menuIDContrast:contrastMode.Store(!contrastMode.Load())
+ case menuIDAlarmToggle:alarmEnabled.Store(!alarmEnabled.Load());if !alarmEnabled.Load(){stopAviationAlert()}
+ case menuIDAlarmShort:alarmFull.Store(false)
+ case menuIDAlarmFull:alarmFull.Store(true)
+ case menuIDAlarmPause15:alarmPauseSecs.Store(15)
+ case menuIDAlarmPause30:alarmPauseSecs.Store(30)
+ case menuIDAlarmPause60:alarmPauseSecs.Store(60)
+ case menuIDAlarmTest:playAviationAlert(alarmFull.Load())
  case menuIDGreen:colour.Store(1);version.Add(1)
  case menuIDRed:colour.Store(2);version.Add(1)
  case menuIDOrange:colour.Store(3);version.Add(1)
