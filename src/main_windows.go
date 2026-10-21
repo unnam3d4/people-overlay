@@ -230,7 +230,7 @@ func render(hwnd uintptr){
   changed:=v!=oldVersion||oldW!=w||oldH!=h||oldEnabled!=active||oldTest!=test||oldColor!=c
   if !changed&&time.Since(last)<3800*time.Millisecond{time.Sleep(180*time.Millisecond);continue}
   oldVersion,oldW,oldH,oldEnabled,oldTest,oldColor=v,w,h,active,test,c
-  clear(layer.pixels)
+  for i:=range layer.pixels{layer.pixels[i]=0}
   if active{
    if test{drawCorners(&layer,[]Rect{{X:float64(w)/2-80,Y:float64(h)/2-140,W:160,H:280}},c)
    }else{
