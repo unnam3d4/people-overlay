@@ -28,7 +28,8 @@ function Fetch([string]$url,[string]$dest,[long]$minimum) {
   }
 }
 $model = Join-Path $cache 'model.onnx'
-Fetch 'https://huggingface.co/inference4j/yolov8n/resolve/main/model.onnx?download=true' $model 5000000
+& python (Join-Path $project 'scripts/export_yolo.py') $model
+if ($LASTEXITCODE -ne 0) { throw 'Official YOLOv8n export failed' }
 & python (Join-Path $project 'scripts/normalize_onnx.py') $model
 if ($LASTEXITCODE -ne 0) { throw 'ONNX normalization failed' }
 foreach ($arch in @('x64','x86')) {
