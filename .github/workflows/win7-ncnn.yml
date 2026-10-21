@@ -1,8 +1,8 @@
-name: Build Fast CCTV People Overlay x86/x64
+name: Build People Overlay AI v1.0 tracking
 
 on:
   push:
-    branches: [feature/fast-cctv-tray]
+    branches: [feature/person-tracking-v1]
   workflow_dispatch:
 
 permissions:
@@ -78,6 +78,6 @@ jobs:
       - name: Publish verified portable EXEs
         uses: actions/upload-artifact@v4
         with:
-          name: PeopleOverlay_v0.9_CCTV_Tray_Win7to11
+          name: PeopleOverlay_v1.0_Tracking_Win7to11
           path: DIST/*.exe
           retention-days: 30
