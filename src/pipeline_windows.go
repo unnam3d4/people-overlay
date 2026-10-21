@@ -8,8 +8,9 @@ import (
 )
 
 type inferenceRequest struct {
- input []float32
- scale,padX,padY float64
+ // Raw cropped BGRA frame: no 640px resize on the capture/tracking thread.
+ pixels []byte
+ contrast bool
  zone scanRegion
  epoch uint64
  captured []TrackView
@@ -38,10 +39,18 @@ func inferenceWorker(detector *Detector,requests <-chan inferenceRequest,replies
     threads:=1;if fastAI.Load(){threads=2};control.SetThreads(threads)
    }
    begun:=time.Now()
-   output,n,err:=detector.Predict(req.input)
+   // Bilinear resize, contrast and float conversion execute only here.
+   // This prevents old single-core Windows 7 systems from pausing overlay
+   // tracking while preparing a costly 640x640 neural input.
+   input,scale,px,py:=prepareRegionFrameEnhanced(req.pixels,req.zone.w,req.zone.h,
+    scanRegion{0,0,req.zone.w,req.zone.h},req.contrast)
+   var output []float32
+   var n int
+   var err error
+   if input==nil{err=fmt.Errorf("invalid captured AI crop")}else{output,n,err=detector.Predict(input)}
    var found []Rect
    if err==nil {
-    found=decodePeople(output,n,req.zone.w,req.zone.h,req.scale,req.padX,req.padY,confidenceThreshold(sensitivity.Load()))
+    found=decodePeople(output,n,req.zone.w,req.zone.h,scale,px,py,confidenceThreshold(sensitivity.Load()))
     for i:=range found{
      found[i].X+=float64(req.zone.x)
      found[i].Y+=float64(req.zone.y)
@@ -136,7 +145,17 @@ func analyze(d *Detector){
    pixels:=append([]byte(nil),snap.pixels...)
    go saveCapture(pixels,w,h)
   }
-  sch.observe(snap.pixels,w,h,regions)
+  // A simultaneous hard scene cut on most cameras means the user switched
+  // RVi layouts. Drop stale tracks and reject any AI result from the old view.
+  if sch.observe(snap.pixels,w,h,regions){
+   epoch++
+   tracker.reset()
+   tracker.layout(w,h,func()int{if profile==3{return 4};return 0}())
+   alarm.resetScene()
+   sch.reset(len(regions),w,h,profile)
+   nextInference=time.Time{}
+   publish(time.Now())
+  }
   now:=time.Now()
   tracker.step(snap.pixels,w,h,now)
 
@@ -157,8 +176,14 @@ func analyze(d *Detector){
     sch.markScanned(regionIndex(regions,result.zone),now,len(result.detected)>0)
     corrected:=compensateLateDetections(result.detected,result.captured,tracker.views(now))
     tracker.observePeople(corrected,now)
+    // A targeted camera crop that no longer contains the person is
+    // negative evidence. Two negative neural checks remove ghost corners.
+    if regionIndex(regions,result.zone)!=0 {
+     tracker.noteRegionScan(result.zone,now)
+    }
     lastInferenceMS.Store(result.duration.Milliseconds())
     lastBusy=result.duration
+    tracker.maxAIAge=recheckTTL(len(regions),profile,lastBusy)
     nextInference=now.Add(throttleFor(profile,result.duration))
    default:
     drain=false
@@ -171,13 +196,13 @@ func analyze(d *Detector){
   if !pending&&!now.Before(nextInference){
    index:=sch.next(now,profile)
    region:=regions[index]
-   input,scale,px,py:=prepareRegionFrameEnhanced(snap.pixels,w,h,region,contrastMode.Load())
-   if input!=nil{
+   crop:=copyRegionBGRA(snap.pixels,w,h,region)
+   if crop!=nil{
     captured:=tracker.views(now)
-    // Only ever queue ONE request. Unlike v1.0 this does not allocate and
-    // preprocess a new 640x640 frame on every capture while AI is occupied.
+    // At most one raw crop is queued; inference never builds up a backlog.
+    // The source DIB may change during inference, so copy only selected ROI.
     select{
-    case req<-inferenceRequest{input:input,scale:scale,padX:px,padY:py,zone:region,epoch:epoch,captured:captured}:
+    case req<-inferenceRequest{pixels:crop,contrast:contrastMode.Load(),zone:region,epoch:epoch,captured:captured}:
      pending=true
      sch.markScanned(index,now,false)
      nextInference=now.Add(throttleFor(profile,lastBusy))
