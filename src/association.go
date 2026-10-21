@@ -36,6 +36,7 @@ func sameSilhouette(a,b Rect) bool {
 
 func trackMatchScore(p personTrack,d Rect,cell int,at time.Time)float64 {
  if d.W<=0||d.H<=0||p.Box.W<=0||p.Box.H<=0{return 0}
+ if nestedROISubject(d,p.Box){return 88}
  wRatio:=math.Min(d.W,p.Box.W)/math.Max(d.W,p.Box.W)
  hRatio:=math.Min(d.H,p.Box.H)/math.Max(d.H,p.Box.H)
  if wRatio*hRatio<.29{return 0}
@@ -54,6 +55,29 @@ func trackMatchScore(p personTrack,d Rect,cell int,at time.Time)float64 {
  return score
 }
 
+// A single human can be detected as a full body, torso and head when
+// neighboring camera crops overlap. Containment alone is insufficient:
+// unrelated people in crowds can overlap. Require strong horizontal
+// alignment and the same top edge of the silhouette.
+func nestedROISubject(a,b Rect) bool {
+ if a.W<=0||b.W<=0||a.H<=0||b.H<=0{return false}
+ big,small:=a,b
+ if a.W*a.H<b.W*b.H{big,small=b,a}
+ ratio:=small.W*small.H/(big.W*big.H)
+ if ratio>.76||ratio<.055{return false}
+ if coveringFraction(big,small)<.85{return false}
+ dx:=math.Abs((small.X+small.W*.5)-(big.X+big.W*.5))
+ if dx>big.W*.23{return false}
+ if math.Abs(small.Y-big.Y)>big.H*.19{return false}
+ // The crop should look like a partial detection of the same upright
+ // silhouette, not another person standing elsewhere inside a loose box.
+ if small.H>big.H*.94{return false}
+ return true
+}
+func sameROISubject(a,b Rect) bool {
+ return sameSilhouette(a,b)||nestedROISubject(a,b)
+}
+
 // O(n^3) minimum-cost assignment (rectangular Hungarian algorithm).
 // Extra dummy columns let unmatched tracks remain unmatched, instead of
 // stealing another person's box. At most 48 tracks are retained.
@@ -65,7 +89,7 @@ func bestGlobalMatches(scores [][]float64)[]int {
  for i:=range result{result[i]=-1}
  if d==0{return result}
  m:=d+n
- const noMatch=110.0
+ const noMatch=0.0
  cost:=func(i,j int)float64{
   if j>=d{return noMatch}
   if scores[i][j]<=0{return 1e6}
@@ -129,10 +153,15 @@ func (t *personTracker)assignDetections(found []Rect,at time.Time){
   alpha:=.42
   if move>math.Max(5,p.Box.W*.14){alpha=.76}
   if move<1.25{alpha=.24}
-  p.Box.X+=(d.X-p.Box.X)*alpha
-  p.Box.Y+=(d.Y-p.Box.Y)*alpha
-  p.Box.W+=(d.W-p.Box.W)*.44
-  p.Box.H+=(d.H-p.Box.H)*.44
+  if nestedROISubject(p.Box,d){
+   // Hold the larger YOLO box: a torso-only crop must not shrink it.
+   if d.W*d.H>p.Box.W*p.Box.H{p.Box=d}
+  }else{
+   p.Box.X+=(d.X-p.Box.X)*alpha
+   p.Box.Y+=(d.Y-p.Box.Y)*alpha
+   p.Box.W+=(d.W-p.Box.W)*.44
+   p.Box.H+=(d.H-p.Box.H)*.44
+  }
   p.Box.Score=d.Score
   p.LastAI=at
   p.LastVisual=at
@@ -143,12 +172,39 @@ func (t *personTracker)assignDetections(found []Rect,at time.Time){
   if used[j]||len(t.people)>=maxTrackedPeople{continue}
   duplicate:=false
   for _,p:=range t.people{
-   if sameSilhouette(d,p.Box){duplicate=true;break}
+   if sameROISubject(d,p.Box){duplicate=true;break}
   }
   if duplicate{continue}
   t.nextID++
   t.people=append(t.people,personTrack{
    Box:d,ID:t.nextID,LastAI:at,LastVisual:at,Tile:t.tileOf(d),
   })
+ }
+ // A later adjacent crop can supply a second detection of the same
+ // silhouette, rather than a genuinely new person. Reconcile already
+ // existing tracks as well, retaining the oldest ID and largest box.
+ t.reconcileROISubjects(at)
+
+}
+
+func (t *personTracker)reconcileROISubjects(now time.Time){
+ for i:=0;i<len(t.people);i++{
+  for j:=i+1;j<len(t.people);{
+   a,b:=t.people[i],t.people[j]
+   if !sameROISubject(a.Box,b.Box){j++;continue}
+   // Avoid erroneously joining two known, similarly sized people merely
+   // crossing: nested case is strict, near-identical case needs stable IDs
+   // plus strongly coincident coordinates.
+   if b.ID<a.ID{a,b=b,a}
+   if b.Box.W*b.Box.H>a.Box.W*a.Box.H{a.Box=b.Box}
+   if b.LastAI.After(a.LastAI){a.LastAI=b.LastAI;a.Box.Score=b.Box.Score}
+   if b.LastVisual.After(a.LastVisual){a.LastVisual=b.LastVisual}
+   if b.LastMotion.After(a.LastMotion){a.LastMotion=b.LastMotion}
+   if b.LastStep.After(a.LastStep){a.LastStep=b.LastStep}
+   if b.AIMisses<a.AIMisses{a.AIMisses=b.AIMisses}
+   a.Tile=t.tileOf(a.Box)
+   t.people[i]=a
+   t.people=append(t.people[:j],t.people[j+1:]...)
+  }
  }
 }
