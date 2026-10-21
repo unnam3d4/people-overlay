@@ -155,6 +155,10 @@ func(t *appTray)popupMenu(){
  action:="Временно выключить"
  if !active{action="Включить детекцию"}
  appendMenu(menu,menuIDToggle,action,false)
+ // Read-only field diagnosis: user can report this without screenshots.
+ stats:=fmt.Sprintf("AI: %d мс  |  людей: %d",lastInferenceMS.Load(),trackedCount.Load())
+ info:=syscall.StringToUTF16Ptr(stats)
+ trayAppendMenu.Call(menu,menuString|1,0,uintptr(unsafe.Pointer(info)))
  separator(menu)
  appendMenu(menu,menuIDProfileEco,"Режим: экономный (2×2)",scanMode.Load()==1)
  appendMenu(menu,menuIDProfileBalanced,"Режим: сбалансированный (3×3)",scanMode.Load()==2)
