@@ -183,9 +183,12 @@ func analyze(d *Detector){
   publish(time.Now())
   // This lightweight loop moves markers even during a multi-second CPU AI
   // call. Eco and balanced protect older machines from excessive capture.
-  cadence:=230*time.Millisecond
-  if profile==1{cadence=320*time.Millisecond}
-  if profile==3{cadence=140*time.Millisecond}
+  cadence:=300*time.Millisecond
+  if len(tracker.people)>0{
+   cadence=210*time.Millisecond
+   if profile==3{cadence=115*time.Millisecond}
+   if profile==1{cadence=340*time.Millisecond}
+  }else if profile==1{cadence=440*time.Millisecond}
   elapsed:=time.Since(start)
   if elapsed<cadence{time.Sleep(cadence-elapsed)}
  }
