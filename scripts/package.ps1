@@ -28,14 +28,17 @@ function Fetch([string]$url,[string]$dest,[long]$minimum) {
   }
 }
 $model = Join-Path $cache 'model.onnx'
-$nuget = Join-Path $cache 'onnxruntime.nupkg.zip'
 Fetch 'https://huggingface.co/inference4j/yolov8n/resolve/main/model.onnx?download=true' $model 5000000
-Fetch 'https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.11.1/microsoft.ml.onnxruntime.1.11.1.nupkg' $nuget 2000000
-$ort = Join-Path $cache 'onnxruntime-package'
-Expand-Archive -LiteralPath $nuget -DestinationPath $ort -Force
+foreach ($arch in @('x64','x86')) {
+  $archive = Join-Path $cache "onnxruntime-win-$arch-1.11.1.zip"
+  $url = "https://github.com/microsoft/onnxruntime/releases/download/v1.11.1/onnxruntime-win-$arch-1.11.1.zip"
+  Fetch $url $archive 10000000
+  $unpacked = Join-Path $cache "runtime-$arch"
+  Expand-Archive -LiteralPath $archive -DestinationPath $unpacked -Force
+}
 $sourceDir = Join-Path $project 'src'
 function Package([string]$arch,[string]$goarch) {
-  $runtime = Join-Path $ort "runtimes\win-$arch\native\onnxruntime.dll"
+  $runtime = Join-Path (Join-Path $cache "runtime-$arch") "onnxruntime-win-$arch-1.11.1\lib\onnxruntime.dll"
   if (!(Test-Path -LiteralPath $runtime)) { throw "NuGet missing native runtime for $arch" }
   $payload = Join-Path $cache "payload-$arch"
   New-Item -ItemType Directory -Path $payload -Force | Out-Null
@@ -79,5 +82,5 @@ Copy-Item (Join-Path $project 'README.md') -Destination $out
 Copy-Item (Join-Path $project 'THIRD_PARTY_NOTICES.txt') -Destination $out
 # Required to accompany redistributions of AGPL-3.0 licensed model.
 $license = Join-Path $out 'LICENSE-AGPL-3.0.txt'
-Fetch 'https://raw.githubusercontent.com/ultralytics/ultralytics/main/LICENSE' $license 10000
+Copy-Item -LiteralPath (Join-Path $project 'LICENSE') -Destination $license -Force
 Write-Host "Both offline builds passed the real AI self-test." -ForegroundColor Green
