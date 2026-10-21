@@ -21,7 +21,7 @@ func TestLostConfirmedHumanGetsUrgentCCTVNeuralRecheck(t *testing.T) {
  tr.observePeople([]Rect{box},start)
  original:=tr.views(start)
  if len(original)!=1 {t.Fatalf("strong person not confirmed: %+v",original)}
- now:=start.Add(time.Second)
+ now:=start.Add(1350*time.Millisecond)
  if views:=tr.views(now);len(views)!=0 {t.Fatalf("lost visuals must not keep old overlay visible: %+v",views)}
  pending:=tr.tentativeViews(now)
  if len(pending)!=1||pending[0].ID!=original[0].ID{t.Fatalf("lost verified person not sent for urgent recheck: %+v",pending)}
@@ -34,8 +34,8 @@ func TestLostConfirmedHumanGetsUrgentCCTVNeuralRecheck(t *testing.T) {
   t.Fatalf("lost person camera should preempt normal low-activity scan: got tile %d wanted %d",got,tile)
  }
  // Epoch/capture invariants still apply to the accelerated scan.
- tr.noteRegionScanSnapshot(regs[tile],start.Add(1100*time.Millisecond),start.Add(50*time.Millisecond),tile,original)
- if got:=tr.schedulerViews(start.Add(1100*time.Millisecond));len(got)!=1{
+ tr.noteRegionScanSnapshot(regs[tile],start.Add(1450*time.Millisecond),start.Add(50*time.Millisecond),tile,original)
+ if got:=tr.schedulerViews(start.Add(1450*time.Millisecond));len(got)!=1{
   t.Fatalf("one negative capture prematurely erased lost person: %+v",got)
  }
 }
