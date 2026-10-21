@@ -1,0 +1,35 @@
+name: Build portable Windows EXE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-offline:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Go 1.20 for Windows 7 compatibility
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+      - name: Unit tests
+        shell: pwsh
+        working-directory: src
+        run: go test -v ./...
+      - name: Build both architectures, embed model and test real inference
+        shell: pwsh
+        run: ./scripts/package.ps1
+      - name: Upload verified offline EXEs
+        uses: actions/upload-artifact@v4
+        with:
+          name: PeopleOverlay_Windows7to11
+          path: RELEASE/*
+          if-no-files-found: error
+          retention-days: 30
