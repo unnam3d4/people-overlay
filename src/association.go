@@ -165,6 +165,7 @@ func (t *personTracker)assignDetections(found []Rect,at time.Time){
   }
   p.Box.Score=d.Score
   p.LastAI=at
+  p.AnchorValid=false // new AI box requires new texture reference
   p.LastVisual=at
   p.AIMisses=0
   p.Tile=t.tileOf(p.Box)
