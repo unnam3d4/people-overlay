@@ -108,6 +108,10 @@ var scanMode atomic.Int32
 var sensitivity atomic.Int32
 var contrastMode atomic.Bool
 var captureRequested atomic.Bool
+var captureCompat atomic.Bool
+var captureProbeRequested atomic.Bool
+var captureProbePercent atomic.Int32
+var probeReady atomic.Bool
 var showNumbers atomic.Bool
 var alarmEnabled atomic.Bool
 var alarmFull atomic.Bool
