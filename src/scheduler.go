@@ -59,17 +59,23 @@ func movementScore(before,after []uint8)float64{
  if fraction<.008{return 0}
  return math.Min(1,fraction)
 }
-func (s *scanScheduler)observe(frame []byte,w,h int,regions []scanRegion){
- if len(regions)!=len(s.lastScan)||w!=s.width||h!=s.height{return}
+func (s *scanScheduler)observe(frame []byte,w,h int,regions []scanRegion)bool{
+ if len(regions)!=len(s.lastScan)||w!=s.width||h!=s.height{return false}
+ hardCuts,compared:=0,0
  for i:=1;i<len(regions);i++{
   cur:=tinySignature(frame,w,h,regions[i])
   if s.fingerprint[i]!=nil{
    measured:=movementScore(s.fingerprint[i],cur)
+   compared++
+   if measured>=.72{hardCuts++}
    // Motion persists briefly through occasional compression/decoding stalls.
    s.activity[i]=math.Max(measured,s.activity[i]*.48)
   }
   s.fingerprint[i]=cur
  }
+ // Require a synchronized change of at least 2/3 camera tiles. A walking
+ // person in one feed or compression noise must never reset all tracking.
+ return compared>=4&&hardCuts*3>=compared*2
 }
 func (s *scanScheduler)markScanned(index int,now time.Time,detected bool){
  if index<0||index>=len(s.lastScan){return}
@@ -110,4 +116,17 @@ func throttleFor(profile int32,busy time.Duration)time.Duration{
  if delay<minimum{delay=minimum}
  if delay>maximum{delay=maximum}
  return delay
+}
+
+// Neural revalidation must tolerate one scan cycle through the 16-camera
+// mosaic, even on slower CPUs. Targeted negative AI scans and visual loss
+// remove obsolete tracks early; the upper limit prevents permanent ghosts.
+func recheckTTL(regions int,profile int32,busy time.Duration)time.Duration{
+ if regions<1{regions=1}
+ if busy<=0{busy=350*time.Millisecond}
+ cycle:=time.Duration(regions)*(busy+throttleFor(profile,busy))
+ ttl:=cycle+cycle/3
+ if ttl<9*time.Second{ttl=9*time.Second}
+ if ttl>45*time.Second{ttl=45*time.Second}
+ return ttl
 }

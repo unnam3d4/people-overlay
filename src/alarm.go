@@ -10,6 +10,12 @@ type alarmGate struct{
  lastGlobal time.Time
  byZone map[int]time.Time
 }
+// On a global RVi camera-group switch, ID and zone histories refer to the
+// previous layout. Preserve the global silence pause to avoid a siren burst.
+func (g *alarmGate)resetScene(){
+ g.candidates=nil
+ g.byZone=nil
+}
 func (g *alarmGate)tick(t *personTracker,now time.Time,enabled bool,globalPause time.Duration)bool{
  if g.candidates==nil{g.candidates=make(map[int]alarmCandidate)}
  if g.byZone==nil{g.byZone=make(map[int]time.Time)}

@@ -42,6 +42,21 @@ func regionsForProfile(w,h int,profile int32)[]scanRegion{
  return regs
 }
 
+// copyRegionBGRA snapshots only one selected camera crop, not the full
+// desktop. The 640x640 conversion runs in the AI goroutine after this copy.
+// Each row is copied before BitBlt may overwrite the shared source DIB.
+func copyRegionBGRA(src []byte,fullW,fullH int,r scanRegion)[]byte{
+ if fullW<1||fullH<1||r.w<1||r.h<1||r.x<0||r.y<0||
+  r.x+r.w>fullW||r.y+r.h>fullH||len(src)<fullW*fullH*4{return nil}
+ stride:=r.w*4
+ crop:=make([]byte,stride*r.h)
+ for y:=0;y<r.h;y++{
+  start:=((r.y+y)*fullW+r.x)*4
+  copy(crop[y*stride:(y+1)*stride],src[start:start+stride])
+ }
+ return crop
+}
+
 // Crop, rescale to 640x640, maintain aspect ratio, and letterbox.
 // Bilinear sampling avoids aliasing distant 20-50 pixel CCTV silhouettes.
 func prepareRegionFrame(src []byte,fullW,fullH int,reg scanRegion)([]float32,float64,float64,float64){

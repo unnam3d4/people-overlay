@@ -234,4 +234,11 @@ func(t *appTray)action(id uintptr){
  case menuIDTest:testOnly.Store(!testOnly.Load());version.Add(1)
  case menuIDExit:stopped.Store(true);trayPostQuit.Call(0)
  }
+ // Persist only user-facing sound preferences. In particular, "mute" must
+ // remain muted after Windows or RVi is restarted.
+ switch id {
+ case menuIDAlarmToggle,menuIDAlarmShort,menuIDAlarmFull,
+  menuIDAlarmPause15,menuIDAlarmPause30,menuIDAlarmPause60:
+  saveAlarmPreferences()
+ }
 }
