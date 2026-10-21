@@ -48,8 +48,8 @@ func TestFullFramePeriodic(t *testing.T){
  var s scanScheduler
  s.reset(len(tiles),640,480,3)
  now:=time.Now()
- if got:=s.next(now,3);got!=0{t.Fatalf("first scan should be fullscreen, got %d",got)}
- s.markScanned(0,now.Add(-13*time.Second),false)
+ if got:=s.next(now,3);got==0{t.Fatal("CCTV mosaic must start with magnified camera tiles, not tiny full-screen silhouettes")}
+ s.markScanned(0,now.Add(-56*time.Second),false)
  if got:=s.next(now,3);got!=0{t.Fatalf("periodic fullscreen required, got %d",got)}
 }
 
