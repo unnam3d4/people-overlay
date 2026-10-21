@@ -25,7 +25,7 @@ jobs:
           python-version: '3.11'
       - name: Install ONNX model converter on builder
         shell: pwsh
-        run: python -m pip install --quiet onnx==1.15.0
+        run: python -m pip install --quiet onnx==1.15.0 ultralytics==8.3.0
       - name: Unit tests
         shell: pwsh
         working-directory: src
