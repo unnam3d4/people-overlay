@@ -32,6 +32,8 @@ const (
  menuIDRed=141
  menuIDOrange=142
  menuIDTest=150
+ menuIDNumbers=152
+ menuIDCapture=153
  menuIDExit=199
  wmRButtonUp=0x0205
  wmLButtonUp=0x0202
@@ -157,6 +159,8 @@ func(t *appTray)popupMenu(){
  appendMenu(menu,menuIDRed,"Цвет: красный",colour.Load()==2)
  appendMenu(menu,menuIDOrange,"Цвет: оранжевый",colour.Load()==3)
  separator(menu)
+ appendMenu(menu,menuIDNumbers,"Показывать номера людей",showNumbers.Load())
+ appendMenu(menu,menuIDCapture,"Сохранить проверочный кадр",false)
  appendMenu(menu,menuIDTest,"Проверить уголки",testOnly.Load())
  separator(menu)
  appendMenu(menu,menuIDExit,"Выход",false)
@@ -179,6 +183,8 @@ func(t *appTray)action(id uintptr){
  case menuIDGreen:colour.Store(1);version.Add(1)
  case menuIDRed:colour.Store(2);version.Add(1)
  case menuIDOrange:colour.Store(3);version.Add(1)
+ case menuIDNumbers:showNumbers.Store(!showNumbers.Load());version.Add(1)
+ case menuIDCapture:captureRequested.Store(true)
  case menuIDTest:testOnly.Store(!testOnly.Load());version.Add(1)
  case menuIDExit:stopped.Store(true);trayPostQuit.Call(0)
  }
