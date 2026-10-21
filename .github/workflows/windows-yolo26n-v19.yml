@@ -1,0 +1,70 @@
+name: v1.9 actual YOLO26n NCNN CPU model Windows7 x64 x86
+on:
+  push:
+    branches: [feature/yolo26n-ncnn-v19]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  export-and-package:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify v1.8 app tests before replacing model
+        working-directory: src
+        run: go test ./...
+      - name: Install official Ultralytics YOLO26n NCNN exporter
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade ultralytics ncnn pnnx
+      - name: Export real pretrained YOLO26n into NCNN
+        run: python scripts/export_yolo26n.py _ncnn_model
+      - name: Download trusted v1.8 Win7 native runtime and standalone exe
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39613297202
+          name: PeopleOverlay_v1.8_Fast_CCTV_PersonLock_Win7
+          github-token: ${{ github.token }}
+          path: BASE
+      - name: Repack model into Windows 7 compatible EXEs
+        run: python scripts/repack_yolo26n.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yolo26n-candidate-unverified
+          path: RELEASE_NCNN/*.exe
+          retention-days: 1
+  windows-ncnn-smoke:
+    needs: export-and-package
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: yolo26n-candidate-unverified
+          path: DIST
+      - name: Prove actual YOLO26n NCNN load and 640x640 inference on x64 and x86
+        shell: pwsh
+        run: |
+          foreach ($arch in @('x64','x86')) {
+            $exe = Join-Path (Resolve-Path ./DIST).Path "PeopleOverlay_v1.9_YOLO26n_$arch.exe"
+            Write-Host "Testing real embedded YOLO26n NCNN $arch"
+            $p = Start-Process -FilePath $exe -ArgumentList '--selftest' -Wait -PassThru
+            if ($p.ExitCode -ne 0) {
+              $log = Join-Path $env:LOCALAPPDATA 'PeopleOverlay/PeopleOverlay.log'
+              if (Test-Path $log) { Get-Content $log -Tail 60 | Write-Host }
+              throw "YOLO26n NCNN native model failed $arch with code $($p.ExitCode)"
+            }
+            Write-Host "PASS YOLO26n NCNN $arch"
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PeopleOverlay_v1.9_YOLO26n_Win7_11_Verified
+          path: DIST/*.exe
+          retention-days: 30
