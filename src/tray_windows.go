@@ -32,7 +32,6 @@ const (
  menuIDRed=141
  menuIDOrange=142
  menuIDTest=150
- menuIDCapture=151
  menuIDExit=199
  wmRButtonUp=0x0205
  wmLButtonUp=0x0202
@@ -53,6 +52,7 @@ var(
  trayCreateIcon=user32.NewProc("CreateIcon")
  trayDestroyIcon=user32.NewProc("DestroyIcon")
  trayLoadIcon=user32.NewProc("LoadIconW")
+ trayPostQuit=user32.NewProc("PostQuitMessage")
 )
 type trayData struct{
  CbSize uint32
@@ -158,11 +158,10 @@ func(t *appTray)popupMenu(){
  appendMenu(menu,menuIDOrange,"Цвет: оранжевый",colour.Load()==3)
  separator(menu)
  appendMenu(menu,menuIDTest,"Проверить уголки",testOnly.Load())
- appendMenu(menu,menuIDCapture,"Сохранить снимок захвата",false)
  separator(menu)
  appendMenu(menu,menuIDExit,"Выход",false)
  var p point
- trayGetCursor.Call(uintptr(unsafe.Pointer(&p))
+ trayGetCursor.Call(uintptr(unsafe.Pointer(&p)))
  traySetForeground.Call(t.hwnd)
  cmd,_,_:=trayTrackMenu.Call(menu,menuReturnCmd|menuRightButton,uintptr(p.X),uintptr(p.Y),0,t.hwnd,0)
  t.action(cmd)
@@ -181,7 +180,6 @@ func(t *appTray)action(id uintptr){
  case menuIDRed:colour.Store(2);version.Add(1)
  case menuIDOrange:colour.Store(3);version.Add(1)
  case menuIDTest:testOnly.Store(!testOnly.Load());version.Add(1)
- case menuIDCapture:captureRequested.Store(true)
- case menuIDExit:stopped.Store(true)
+ case menuIDExit:stopped.Store(true);trayPostQuit.Call(0)
  }
 }
