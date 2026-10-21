@@ -231,7 +231,18 @@ func (t *personTracker)observePeople(detections []Rect,at time.Time){
  for _,d:=range detections{
   if d.W<6||d.H<9{continue}
   duplicate:=false
-  for _,u:=range unique{if sameSilhouette(d,u){duplicate=true;break}}
+  for i,u:=range unique{
+   if !sameROISubject(d,u){continue}
+   // Prefer the full human over torso/head proposals. Different crops
+   // can make the partial detection appear more confident than the body.
+   if nestedROISubject(d,u)&&d.W*d.H>u.W*u.H&&d.Score>=u.Score*.58{
+    unique[i]=d
+   }else if sameSilhouette(d,u)&&d.Score>u.Score{
+    unique[i]=d
+   }
+   duplicate=true
+   break
+  }
   if !duplicate{unique=append(unique,d)}
  }
  t.assignDetections(unique,at)
@@ -269,6 +280,8 @@ func (t *personTracker)prune(now time.Time){
   // revalidation eventually so background texture is not called a person.
   ttl:=t.maxAIAge
   if ttl<=0{ttl=8*time.Second}
+  // No static screen texture can extend a missing AI confirmation forever.
+  // Active targets are deliberately revisited every few seconds by scheduler.
   if aiAge>ttl{continue}
   keep=append(keep,p)
  }
