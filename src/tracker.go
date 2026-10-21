@@ -124,6 +124,27 @@ func motionShift(previous,current []byte,w,h int,box Rect)(float64,float64,bool)
  if same-best<3.5||second-best<.24{return 0,0,false}
  return float64(bestDX*trackingDownscale),float64(bestDY*trackingDownscale),true
 }
+// When clothing or the image is smooth, template matching has too little
+// texture to infer motion. A stable patch still gives positive visual evidence
+// of a stationary person (and will not be mistaken for a vanished silhouette).
+func stationaryAppearance(previous,current []byte,w,h int,box Rect)bool{
+ if w<1||h<1||len(previous)!=w*h||len(current)!=w*h{return false}
+ cx:=(box.X+box.W*.5)/trackingDownscale
+ cy:=(box.Y+box.H*.5)/trackingDownscale
+ hw:=box.W*.34/trackingDownscale
+ hh:=box.H*.35/trackingDownscale
+ if cx-hw<0||cy-hh<0||cx+hw>=float64(w)-.5||cy+hh>=float64(h)-.5{return false}
+ total,large:=0,0
+ for y:=0;y<7;y++{for x:=0;x<7;x++{
+  px:=int(math.Round(cx-hw+2*hw*float64(x)/6))
+  py:=int(math.Round(cy-hh+2*hh*float64(y)/6))
+  diff:=absTrack(int(previous[py*w+px])-int(current[py*w+px]))
+  total+=diff
+  if diff>24{large++}
+ }}
+ return total<=49*9&&large<=5
+}
+
 func (t *personTracker)step(pixels []byte,w,h int,now time.Time) {
  if len(t.people)==0 {
   t.prevGray=nil
@@ -142,6 +163,13 @@ func (t *personTracker)step(pixels []byte,w,h int,now time.Time) {
   if dt<=0||dt>.4{dt=.115}
   p.LastStep=now
   if !good {
+   // Low-texture CCTV clothing can remain perfectly still. Keep the
+   // confirmed person's corners while their actual pixels remain stable.
+   if stationaryAppearance(t.prevGray,gray,gw,gh,p.Box){
+    p.LastVisual=now
+    p.VelocityX=0;p.VelocityY=0
+    continue
+   }
    // Bridge at most 0.35s of weak or occluded video using recent velocity.
    // Never renew LastVisual here: lost tracks still expire promptly.
    if !p.LastMotion.IsZero()&&now.Sub(p.LastMotion)<350*time.Millisecond&&
@@ -168,7 +196,7 @@ func (t *personTracker)step(pixels []byte,w,h int,now time.Time) {
   if dx!=0||dy!=0{p.Box=next}
  }
  t.prevGray=gray
- t.coalesce() // frame-to-frame duplicates must not reach the renderer
+ // Never merge IDs merely because two real people overlap on screen.
  t.prune(now)
 }
 
@@ -194,83 +222,22 @@ func samePersonGeometry(a,b Rect)bool{
  return false
 }
 
-func(t *personTracker)observePeople(detections []Rect,at time.Time){
+func (t *personTracker)observePeople(detections []Rect,at time.Time){
  if len(detections)==0{return}
  sort.SliceStable(detections,func(i,j int)bool{return detections[i].Score>detections[j].Score})
- // Deduplicate before ID assignment: a detection from an overlapping ROI
- // must not create another person's ID during the same AI scan.
+ // A single YOLO frame can contain duplicate near-identical proposals.
+ // Keep two genuinely overlapping people unless almost the same silhouette.
  unique:=make([]Rect,0,len(detections))
  for _,d:=range detections{
   if d.W<6||d.H<9{continue}
   duplicate:=false
-  for _,u:=range unique{
-   if samePersonGeometry(d,u){duplicate=true;break}
-  }
+  for _,u:=range unique{if sameSilhouette(d,u){duplicate=true;break}}
   if !duplicate{unique=append(unique,d)}
  }
- used:=make([]bool,len(t.people))
- for _,d:=range unique{
-  cell:=t.tileOf(d)
-  best,bestScore:=-1,-1e9
-  for j,p:=range t.people{
-   if used[j] || (cell!=p.Tile&&!samePersonGeometry(d,p.Box)){continue}
-   iou:=overlap(d,p.Box)
-   dist:=centerSeparation(d,p.Box)
-   widthRatio:=math.Min(d.W,p.Box.W)/math.Max(d.W,p.Box.W)
-   heightRatio:=math.Min(d.H,p.Box.H)/math.Max(d.H,p.Box.H)
-   if widthRatio*heightRatio<.25{continue}
-   if iou<.09&&dist>.34{continue}
-   if dist>.65{continue}
-   score:=2.5*iou+coveringFraction(d,p.Box)*.3-dist
-   if score>bestScore{best,bestScore=j,score}
-  }
-  if best>=0{
-   p:=&t.people[best]
-   p.Box.X=p.Box.X*.17+d.X*.83
-   p.Box.Y=p.Box.Y*.17+d.Y*.83
-   p.Box.W=p.Box.W*.24+d.W*.76
-   p.Box.H=p.Box.H*.24+d.H*.76
-   p.Box.Score=d.Score
-   p.LastAI=at
-   p.AIMisses=0
-   p.LastVisual=at
-   p.Tile=cell
-   used[best]=true
-   continue
-  }
-  // Cross-ROI or late duplicate: if its center and shape coincide with
-  // an already matched track, skip it; it is not a new person.
-  dup:=false
-  for _,p:=range t.people{
-   if samePersonGeometry(d,p.Box){dup=true;break}
-  }
-  if dup||len(t.people)>=maxTrackedPeople{continue}
-  t.nextID++
-  t.people=append(t.people,personTrack{
-   Box:d,ID:t.nextID,LastAI:at,LastVisual:at,Tile:cell,
-  })
-  used=append(used,true)
- }
- t.coalesce()
+ t.assignDetections(unique,at)
  t.prune(at)
 }
-func (t *personTracker)coalesce(){
- // Once two crops have introduced duplicate IDs, merge them and retain
- // the oldest stable ID. Do not let older AI coordinates overwrite newer.
- for i:=0;i<len(t.people);i++{
-  for j:=i+1;j<len(t.people);{
-   a,b:=t.people[i],t.people[j]
-   if !samePersonGeometry(a.Box,b.Box){j++;continue}
-   if b.LastAI.After(a.LastAI){a.Box=b.Box;a.LastAI=b.LastAI}
-   if b.LastVisual.After(a.LastVisual){a.LastVisual=b.LastVisual}
-   if b.LastMotion.After(a.LastMotion){a.LastMotion=b.LastMotion;a.VelocityX=b.VelocityX;a.VelocityY=b.VelocityY}
-   if b.LastStep.After(a.LastStep){a.LastStep=b.LastStep}
-   if b.ID<a.ID{a.ID=b.ID}
-   t.people[i]=a
-   t.people=append(t.people[:j],t.people[j+1:]...)
-  }
- }
-}
+
 // Each camera is checked asynchronously. One missed YOLO detection can
 // occur because of occlusion or poor video quality; two independent negative
 // scans of the *same fully visible region* are enough to retire a ghost box.
