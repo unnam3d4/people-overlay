@@ -1,0 +1,114 @@
+name: v2.0 candidate - real-image x64 x86 and CCTV pixel replay
+on:
+  push:
+    branches: [fix/cctv-validation-v20]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  package:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Processing regressions and benchmark evaluator
+        run: |
+          cd src
+          go test -v ./...
+          cd ..
+          python -m unittest discover -s scripts -p 'test_*.py' -v
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 39614859651
+          name: PeopleOverlay_v1.9_YOLO26n_Win7_11_Verified
+          github-token: ${{ github.token }}
+          path: BASE26
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 39613297202
+          name: PeopleOverlay_v1.8_Fast_CCTV_PersonLock_Win7
+          github-token: ${{ github.token }}
+          path: BASE8
+      - name: Compile fresh Windows 7 application and pack both model choices
+        run: |
+          mkdir -p _output DIST
+          for pair in 'amd64 x64' '386 x86'; do
+            read -r goarch arch <<< "$pair"
+            (cd src && CGO_ENABLED=0 GOOS=windows GOARCH="$goarch" go build -tags ncnn -trimpath -ldflags '-s -w -H windowsgui' -o "../_output/app-$arch.exe" .)
+            python scripts/package_current.py --application "_output/app-$arch.exe" --donor "BASE26/PeopleOverlay_v1.9_YOLO26n_$arch.exe" --output "DIST/PeopleOverlay_v2.0_candidate_YOLO26n_$arch.exe"
+            python scripts/package_current.py --application "_output/app-$arch.exe" --donor "BASE8/PeopleOverlay_Win7_NCNN_$arch.exe" --output "DIST/PeopleOverlay_v2.0_candidate_YOLOv8n_$arch.exe"
+          done
+          python scripts/build_benchmark_baseline.py --go "$(which go)" --work _output/baseline --output _output/baseline.exe
+          python scripts/package_current.py --application _output/baseline.exe --donor BASE26/PeopleOverlay_v1.9_YOLO26n_x64.exe --output DIST/v19-benchmark-x64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v20-internal-candidates
+          path: DIST/*
+          retention-days: 7
+
+  verify:
+    needs: package
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: v20-internal-candidates
+          path: DIST
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pillow==12.1.1 psutil==7.2.2
+      - name: Actual embedded-model positive and negative self-tests on both architectures
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force benchmark-results | Out-Null
+          foreach ($exe in Get-ChildItem DIST/PeopleOverlay*.exe) {
+            $report = Join-Path (Resolve-Path benchmark-results).Path ($exe.BaseName + '-selftest.json')
+            $p = Start-Process -FilePath $exe.FullName -ArgumentList @('--selftest',('"'+$report+'"')) -WindowStyle Hidden -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "Real-image selftest failed: $($exe.Name), exit $($p.ExitCode)" }
+            $r = Get-Content $report -Raw | ConvertFrom-Json
+            if (!$r.passed -or $r.matched_people -ne 3 -or $r.blank_people -ne 0) { throw 'Invalid selftest evidence' }
+          }
+      - name: Reproducible photographic synthetic 15 and 30 FPS scenarios
+        run: python scripts/generate_pixel_benchmark.py --source src/testdata/bus-reference.jpg --output _fixture
+      - name: Identical baseline and candidate pixel replay (sequential, measured delay)
+        run: python scripts/run_pixel_benchmarks.py --exe v19=DIST/v19-benchmark-x64.exe --exe v20=DIST/PeopleOverlay_v2.0_candidate_YOLO26n_x64.exe --fixtures _fixture --output benchmark-results/replay
+      - name: Score all misses, false boxes, delay and identity changes
+        shell: pwsh
+        run: |
+          $reports = Get-ChildItem benchmark-results/replay/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName }
+          python scripts/evaluate_pixel_benchmark.py @reports --output benchmark-results/comparison.json
+      - name: Package portable downloads and source notices
+        shell: pwsh
+        run: |
+          Remove-Item -LiteralPath DIST/v19-benchmark-x64.exe
+          Remove-Item -LiteralPath DIST/v19-benchmark-x64.bundle.json
+          Copy-Item LICENSE,THIRD_PARTY_NOTICES.txt,README.md DIST
+          Compress-Archive -Path DIST/* -DestinationPath PeopleOverlay_v2.0_candidate_portable.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PeopleOverlay_v2.0_candidate_test_evidence
+          path: benchmark-results/
+          retention-days: 90
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PeopleOverlay_v2.0_candidate_portable_Win7_11_x64_x86
+          path: |
+            DIST/*
+            PeopleOverlay_v2.0_candidate_portable.zip
+          retention-days: 90

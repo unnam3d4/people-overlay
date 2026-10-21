@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+_output/
+_ncnn_*/
+BASE/
+RELEASE*/
+benchmark-results/
