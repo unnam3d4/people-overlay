@@ -3,6 +3,7 @@
 #include "net.h"
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 #include <memory>
 #include <vector>
 
@@ -18,10 +19,18 @@ extern "C" __declspec(dllexport) int __stdcall PPLLoad(const wchar_t* param, con
     g_net->opt.use_fp16_storage = false;
     g_net->opt.use_fp16_arithmetic = false;
     g_net->opt.use_int8_inference = false;
-    int rc = g_net->load_param(param);
+    // MinGW NCNN exposes FILE* rather than wchar_t* overload; _wfopen
+    // preserves non-ASCII usernames and file paths on Windows 7.
+    FILE* pf = _wfopen(param, L"rb");
+    if (!pf) { g_net.reset(); return -1; }
+    int rc = g_net->load_param(pf);
+    fclose(pf);
     if (rc != 0) { g_net.reset(); return -2; }
-    rc = g_net->load_model(weights);
-    if (rc != 0) { g_net.reset(); return -3; }
+    FILE* wf = _wfopen(weights, L"rb");
+    if (!wf) { g_net.reset(); return -3; }
+    rc = g_net->load_model(wf);
+    fclose(wf);
+    if (rc != 0) { g_net.reset(); return -4; }
     const std::vector<const char*> input_names = g_net->input_names();
     const std::vector<const char*> output_names = g_net->output_names();
     if (!input_names.empty()) g_input = input_names[0];
