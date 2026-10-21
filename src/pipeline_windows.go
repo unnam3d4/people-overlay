@@ -69,15 +69,21 @@ func analyze(d *Detector){
  var nextInference time.Time
  var lastBusy time.Duration=350*time.Millisecond
  lastEnabled:=false
+ var lastPaint []TrackView
 
  publish:=func(now time.Time){
   items:=tracker.views(now)
   boxes.mu.Lock()
-  changed:=!sameTrackViews(boxes.items,items)
   boxes.items=items
   boxes.updated=now
   boxes.mu.Unlock()
-  if changed{version.Add(1)}
+  // Compare against the last frame actually sent to the renderer, not
+  // the prior tracking sample; otherwise slow 1px-per-frame movement
+  // would never exceed the repaint threshold.
+  if !sameTrackViews(lastPaint,items){
+   lastPaint=append(lastPaint[:0],items...)
+   version.Add(1)
+  }
  }
 
  for !stopped.Load(){
@@ -85,6 +91,7 @@ func analyze(d *Detector){
   if !active{
    if lastEnabled{
     tracker.reset()
+    lastPaint=nil
     boxes.mu.Lock();boxes.items=nil;boxes.updated=time.Time{};boxes.mu.Unlock()
     version.Add(1)
    }
