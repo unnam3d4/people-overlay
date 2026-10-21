@@ -106,7 +106,7 @@ func motionShift(previous,current []byte,w,h int,box Rect)(float64,float64,bool)
    }
    avg:=float64(diff)/63
    if dx==0&&dy==0{same=avg}
-   score:=avg+float64(absTrack(dx)+absTrack(dy))*.30
+   score:=avg+float64(absTrack(dx)+absTrack(dy))*.10
    if score<best {
     second=best
     best,bestDX,bestDY=score,dx,dy
