@@ -55,6 +55,8 @@ var(
  trayDestroyIcon=user32.NewProc("DestroyIcon")
  trayLoadIcon=user32.NewProc("LoadIconW")
  trayPostQuit=user32.NewProc("PostQuitMessage")
+ trayDestroyWindow=user32.NewProc("DestroyWindow")
+ trayPostMessage=user32.NewProc("PostMessageW")
 )
 type trayData struct{
  CbSize uint32
@@ -106,7 +108,13 @@ func trayIcon() (uintptr,bool){
  fallback,_,_:=trayLoadIcon.Call(0,32512)
  return fallback,false
 }
-func newTray(hwnd uintptr)(*appTray,error){
+func newTray(overlay uintptr)(*appTray,error){
+ // A dedicated normal owner window is mandatory for TrackPopupMenu on Win7.
+ // The overlay itself is WS_EX_NOACTIVATE and cannot own a focusable menu.
+ cls:=syscall.StringToUTF16Ptr("STATIC")
+ caption:=syscall.StringToUTF16Ptr("People Overlay - tray controls")
+ hwnd,_,createErr:=pWindow.Call(toolWindow,uintptr(unsafe.Pointer(cls)),uintptr(unsafe.Pointer(caption)),popUp,uintptr(int32(-32000)),uintptr(int32(-32000)),1,1,0,0,0,0)
+ if hwnd==0{return nil,fmt.Errorf("CreateWindowExW(tray): %v",createErr)}
  icon,owned:=trayIcon()
  t:=&appTray{hwnd:hwnd,icon:icon,ownsIcon:owned}
  t.data.CbSize=uint32(unsafe.Sizeof(t.data))
@@ -120,7 +128,7 @@ func newTray(hwnd uintptr)(*appTray,error){
  taskbar,_,_:=trayRegisterWindowMessage.Call(uintptr(unsafe.Pointer(msg)))
  t.taskbarMessage=uint32(taskbar)
  ok,_,e:=trayNotify.Call(trayAdd,uintptr(unsafe.Pointer(&t.data)))
- if ok==0{if owned{trayDestroyIcon.Call(icon)};return nil,fmt.Errorf("Shell_NotifyIconW(NIM_ADD): %v",e)}
+ if ok==0{if owned{trayDestroyIcon.Call(icon)};trayDestroyWindow.Call(hwnd);return nil,fmt.Errorf("Shell_NotifyIconW(NIM_ADD): %v",e)}
  return t,nil
 }
 func(t *appTray)reAdd(){if t!=nil{trayNotify.Call(trayAdd,uintptr(unsafe.Pointer(&t.data)))}}
@@ -128,6 +136,7 @@ func(t *appTray)close(){
  if t==nil{return}
  trayNotify.Call(trayDelete,uintptr(unsafe.Pointer(&t.data)))
  if t.ownsIcon{trayDestroyIcon.Call(t.icon)}
+ trayDestroyWindow.Call(t.hwnd)
 }
 func appendMenu(menu uintptr,id uintptr,s string,checked bool){
  flags:=uintptr(menuString)
@@ -166,9 +175,16 @@ func(t *appTray)popupMenu(){
  appendMenu(menu,menuIDExit,"Выход",false)
  var p point
  trayGetCursor.Call(uintptr(unsafe.Pointer(&p)))
- traySetForeground.Call(t.hwnd)
+ // Briefly activate a 1x1 tool window far outside the visible desktop.
+ // Without this, a WS_EX_NOACTIVATE full-screen overlay causes Windows 7
+ // to dismiss popup menus immediately.
+ pShow.Call(t.hwnd,5) // SW_SHOW
+ focus,_,_:=traySetForeground.Call(t.hwnd)
+ if focus==0{logError(fmt.Errorf("tray: SetForegroundWindow denied"))}
  cmd,_,_:=trayTrackMenu.Call(menu,menuReturnCmd|menuRightButton,uintptr(p.X),uintptr(p.Y),0,t.hwnd,0)
- t.action(cmd)
+ trayPostMessage.Call(t.hwnd,0,0,0) // WM_NULL: proper popup dismissal
+ pShow.Call(t.hwnd,0) // SW_HIDE
+ if cmd!=0{t.action(cmd)}
 }
 func(t *appTray)action(id uintptr){
  switch id{
