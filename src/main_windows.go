@@ -111,6 +111,7 @@ var captureRequested atomic.Bool
 var showNumbers atomic.Bool
 var alarmEnabled atomic.Bool
 var alarmFull atomic.Bool
+var fastAI atomic.Bool
 var alarmPauseSecs atomic.Int32
 var lastInferenceMS atomic.Int64
 var trackedCount atomic.Int32
