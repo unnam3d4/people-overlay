@@ -67,7 +67,7 @@ func motionShift(previous,current []byte,w,h int,box Rect)(float64,float64,bool)
  cy:=(box.Y+box.H*.5)/trackingDownscale
  hw:=box.W*.30/trackingDownscale
  hh:=box.H*.32/trackingDownscale
- if cx-hw<10||cy-hh<10||cx+hw>=float64(w-10)||cy+hh>=float64(h-10){return 0,0,false}
+ if cx-hw<7||cy-hh<7||cx+hw>=float64(w-7)||cy+hh>=float64(h-7){return 0,0,false}
  var xs,ys [63]int
  var values [63]byte
  k,lo,hi:=0,255,0
