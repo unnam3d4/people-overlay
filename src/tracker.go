@@ -210,3 +210,14 @@ func(t *personTracker)views(now time.Time)[]TrackView{
  }
  return views
 }
+
+// Avoid redrawing the entire 1080p monitor when no marker moved.
+func sameTrackViews(a,b []TrackView)bool{
+ if len(a)!=len(b){return false}
+ for i:=range a{
+  if a[i].ID!=b[i].ID{return false}
+  u,v:=a[i].Box,b[i].Box
+  if math.Abs(u.X-v.X)>1.2||math.Abs(u.Y-v.Y)>1.2||math.Abs(u.W-v.W)>1.2||math.Abs(u.H-v.H)>1.2{return false}
+ }
+ return true
+}
