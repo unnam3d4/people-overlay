@@ -235,6 +235,8 @@ jobs:
   # Public MIT-licensed pedestrian footage hosted on GitHub is accessible from
   # Actions. Manual CVAT ground truth consists of HEAD LANDMARKS, NOT bboxes:
   # report face-point coverage/identity separately, never as detection mAP.
+  # This supplementary proxy MUST NOT be used as a product pass/fail gate:
+  # actual person-body GT boxes and IoU are required for product acceptance.
   github-real-video:
     needs: package
     runs-on: windows-2022
@@ -254,12 +256,12 @@ jobs:
         run: python scripts/github_real_keypoint_replay.py --cache _real_source --output _real_video_fixture --duration 8
       - name: Run actual baseline and candidate NCNN on identical real video screens sequentially
         run: python scripts/run_pixel_benchmarks.py --exe v19=DIST/v19-benchmark-x64.exe --exe v20=DIST/PeopleOverlay_v2.0_candidate_YOLO26n_x64.exe --fixtures _real_video_fixture --output benchmark-results/github-real/replay
-      - name: Score manual face coverage, first response and ID switches without invented GT boxes
+      - name: Optional head-landmark diagnostic ONLY - NOT person detection acceptance
         shell: pwsh
         run: |
           $reports = Get-ChildItem benchmark-results/github-real/replay/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName }
-          python scripts/evaluate_landmark_replay.py @reports --output benchmark-results/github-real/landmark-comparison.json --gate
-          if ($LASTEXITCODE -ne 0) { throw 'Actual filmed-person landmark regression compared with v1.9' }
+          python scripts/evaluate_landmark_replay.py @reports --output benchmark-results/github-real/landmark-comparison.json
+          if ($LASTEXITCODE -ne 0) { throw 'Diagnostic data processing failed; this is not person-body detection QA' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
