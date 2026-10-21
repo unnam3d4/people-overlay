@@ -39,7 +39,7 @@ def download(path, dest, expected):
     return dest
 
 
-def face_points_from_cvat(xml_bytes):
+def face_points_from_cvat(xml_bytes, *, require_real_length=True):
     root = ET.fromstring(xml_bytes)
     face = defaultdict(list)
     tracks = root.findall("track")
@@ -59,7 +59,7 @@ def face_points_from_cvat(xml_bytes):
             if n < 0 or not (x >= 0 and y >= 0):
                 continue
             face[n].append({"id": track_id, "x": x, "y": y})
-    if len(face) < 20 or not any(len(p) >= 2 for p in face.values()):
+    if require_real_length and (len(face) < 20 or not any(len(p) >= 2 for p in face.values())):
         raise RuntimeError("insufficient CVAT face landmarks to score real video")
     return dict(face)
 
