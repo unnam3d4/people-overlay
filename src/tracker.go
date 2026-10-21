@@ -18,6 +18,7 @@ type personTrack struct {
  LastStep time.Time
  VelocityX,VelocityY float64
  Tile int
+ AIMisses int
 }
 
 type personTracker struct {
@@ -27,6 +28,7 @@ type personTracker struct {
  grayW,grayH int
  screenW,screenH int
  columns int
+ maxAIAge time.Duration
 }
 
 const trackingDownscale=2
@@ -230,6 +232,7 @@ func(t *personTracker)observePeople(detections []Rect,at time.Time){
    p.Box.H=p.Box.H*.24+d.H*.76
    p.Box.Score=d.Score
    p.LastAI=at
+   p.AIMisses=0
    p.LastVisual=at
    p.Tile=cell
    used[best]=true
@@ -268,17 +271,38 @@ func (t *personTracker)coalesce(){
   }
  }
 }
+// Each camera is checked asynchronously. One missed YOLO detection can
+// occur because of occlusion or poor video quality; two independent negative
+// scans of the *same fully visible region* are enough to retire a ghost box.
+// Crops touching the edge of the person's box are intentionally ignored.
+func (t *personTracker)noteRegionScan(region scanRegion,now time.Time){
+ left,top:=float64(region.x),float64(region.y)
+ right,bottom:=float64(region.x+region.w),float64(region.y+region.h)
+ for i:=range t.people{
+  p:=&t.people[i]
+  if !p.LastAI.Before(now)||p.Box.W<=0||p.Box.H<=0{continue}
+  w:=math.Min(p.Box.X+p.Box.W,right)-math.Max(p.Box.X,left)
+  h:=math.Min(p.Box.Y+p.Box.H,bottom)-math.Max(p.Box.Y,top)
+  if w<=0||h<=0||w*h<.90*p.Box.W*p.Box.H{continue}
+  p.AIMisses++
+ }
+ t.prune(now)
+}
+
 func (t *personTracker)prune(now time.Time){
  keep:=t.people[:0]
  for _,p:=range t.people{
   aiAge:=now.Sub(p.LastAI)
   visualAge:=now.Sub(p.LastVisual)
   if aiAge<0||visualAge<0{continue}
+  if p.AIMisses>=2{continue}
   // Unverified boxes must disappear quickly rather than freeze for 9s.
   if visualAge>1200*time.Millisecond&&aiAge>1700*time.Millisecond{continue}
   // Even if the texture matcher claims a static match, force neural
   // revalidation eventually so background texture is not called a person.
-  if aiAge>8*time.Second{continue}
+  ttl:=t.maxAIAge
+  if ttl<=0{ttl=8*time.Second}
+  if aiAge>ttl{continue}
   keep=append(keep,p)
  }
  t.people=keep
