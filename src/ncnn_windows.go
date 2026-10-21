@@ -12,7 +12,7 @@ import (
 // Win7-targeted NCNN backend: single native inference thread, no MSVC runtime DLL.
 type Detector struct {
  dll *syscall.DLL
- load,infer,closeProc *syscall.Proc
+ load,infer,closeProc,setThreads *syscall.Proc
 }
 
 func NewDetector(root string)(*Detector,error){
@@ -22,7 +22,8 @@ func NewDetector(root string)(*Detector,error){
  lp,e:=dll.FindProc("PPLLoad");if e!=nil{return fail(e)}
  ip,e:=dll.FindProc("PPLInfer");if e!=nil{return fail(e)}
  cp,e:=dll.FindProc("PPLClose");if e!=nil{return fail(e)}
- d:=&Detector{dll:dll,load:lp,infer:ip,closeProc:cp}
+ sp,e:=dll.FindProc("PPLSetThreads");if e!=nil{return fail(e)}
+ d:=&Detector{dll:dll,load:lp,infer:ip,closeProc:cp,setThreads:sp}
  param,e:=syscall.UTF16PtrFromString(filepath.Join(root,"model.param"));if e!=nil{return fail(e)}
  bin,e:=syscall.UTF16PtrFromString(filepath.Join(root,"model.bin"));if e!=nil{return fail(e)}
  ret,_,_:=d.load.Call(uintptr(unsafe.Pointer(param)),uintptr(unsafe.Pointer(bin)))
@@ -40,6 +41,10 @@ func(d *Detector)Predict(input []float32)([]float32,int,error){
  if int32(ret)!=0{return nil,0,fmt.Errorf("NCNN inference failure (code %d)",int32(ret))}
  if count<1||count>8400{return nil,0,fmt.Errorf("NCNN output count invalid: %d",count)}
  return out[:84*int(count)],int(count),nil
+}
+func(d *Detector)SetThreads(n int){
+ if n<1{n=1};if n>2{n=2}
+ if d!=nil&&d.setThreads!=nil{d.setThreads.Call(uintptr(n))}
 }
 func(d *Detector)Close(){
  if d==nil{return}
