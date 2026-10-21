@@ -91,3 +91,15 @@ func TestCaptureProbeOnTwoScreens(t *testing.T){
  }
  if p:=sampleCaptureDifference(nil,b,w,h);p!=0{t.Fatal("invalid capture accepted")}
 }
+
+func TestFullscreenCCTVDoesNotSplitOneHumanIntoSixteen(t *testing.T){
+ rs:=regionsForProfile(1920,1080,0)
+ if len(rs)!=1||rs[0].x!=0||rs[0].y!=0||rs[0].w!=1920||rs[0].h!=1080{
+  t.Fatalf("single expanded video is cut into many unrelated crops: %+v",rs)
+ }
+ var scheduler scanScheduler
+ scheduler.reset(len(rs),1920,1080,0)
+ if idx:=scheduler.next(time.Now(),0);idx!=0{
+  t.Fatalf("single camera crop index=%d",idx)
+ }
+}
