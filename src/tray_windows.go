@@ -113,7 +113,8 @@ func newTray(overlay uintptr)(*appTray,error){
  // The overlay itself is WS_EX_NOACTIVATE and cannot own a focusable menu.
  cls:=syscall.StringToUTF16Ptr("STATIC")
  caption:=syscall.StringToUTF16Ptr("People Overlay - tray controls")
- hwnd,_,createErr:=pWindow.Call(toolWindow,uintptr(unsafe.Pointer(cls)),uintptr(unsafe.Pointer(caption)),popUp,uintptr(int32(-32000)),uintptr(int32(-32000)),1,1,0,0,0,0)
+ offscreen:=int32(-32000)
+ hwnd,_,createErr:=pWindow.Call(toolWindow,uintptr(unsafe.Pointer(cls)),uintptr(unsafe.Pointer(caption)),popUp,uintptr(uint32(offscreen)),uintptr(uint32(offscreen)),1,1,0,0,0,0)
  if hwnd==0{return nil,fmt.Errorf("CreateWindowExW(tray): %v",createErr)}
  icon,owned:=trayIcon()
  t:=&appTray{hwnd:hwnd,icon:icon,ownsIcon:owned}
