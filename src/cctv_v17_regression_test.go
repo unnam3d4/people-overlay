@@ -103,3 +103,22 @@ func TestFullscreenCCTVDoesNotSplitOneHumanIntoSixteen(t *testing.T){
   t.Fatalf("single camera crop index=%d",idx)
  }
 }
+
+func TestGhostDoesNotStayAfterPersonLeavesIntoStaticBackground(t *testing.T){
+ var tr personTracker
+ now:=time.Unix(47000,0)
+ tr.maxAIAge=20*time.Second
+ human,w,h:=flatCCTVFrame(true)
+ blank,_,_:=flatCCTVFrame(false)
+ tr.observePeople([]Rect{{X:30,Y:17,W:40,H:61,Score:.96}},now)
+ tr.step(human,w,h,now)
+ tr.step(blank,w,h,now.Add(250*time.Millisecond))
+ // In the broken build, a still blank background renewed LastVisual
+ // indefinitely, leaving green rectangles fixed over an empty scene.
+ for i:=2;i<=15;i++{
+  tr.step(blank,w,h,now.Add(time.Duration(i)*250*time.Millisecond))
+ }
+ if got:=tr.views(now.Add(4*time.Second));len(got)!=0{
+  t.Fatalf("static background locked in absent silhouette: %+v",got)
+ }
+}
