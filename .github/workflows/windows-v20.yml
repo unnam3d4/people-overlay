@@ -4,6 +4,12 @@ on:
     branches: [fix/cctv-validation-v20]
   workflow_dispatch:
 
+# One CI generation is authoritative at a time. A new fix supersedes older
+# photographic replay runs; inside the run v1.9 and v20 execute sequentially.
+concurrency:
+  group: cctv-v20-validation-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   actions: read
