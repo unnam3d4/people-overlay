@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: v17-fast-unverified
+          name: v18-fast-unverified
           path: DIST
       - name: Load real neural model and infer with both Windows executables
         shell: pwsh
