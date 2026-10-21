@@ -1,0 +1,39 @@
+name: Inspect PETS2009 real person-body video GT
+on:
+  push:
+    paths: ['.github/workflows/inspect-pets2009.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install kagglehub pillow
+      - name: Verify actual filmed PETS frames and ground-truth human BODY rectangles
+        shell: bash
+        run: |
+          python - <<'PY'
+          import kagglehub, os, pathlib, urllib.request, re, collections, hashlib
+          from PIL import Image
+          ds=kagglehub.dataset_download("yeeandres/pets2009")
+          print("ROOT",ds,flush=True)
+          frame_dir=pathlib.Path(ds)/"Crowd_PETS09"/"S2"/"L1"/"Time_12-34"/"View_001"
+          photos=sorted(p for p in frame_dir.glob("*.jpg"))
+          print("FRAMES",len(photos),"EXISTS",frame_dir.exists(),flush=True)
+          if len(photos)<50: raise RuntimeError("PETS S2L1 does not contain 50+ filmed frames")
+          with Image.open(photos[0]) as i: print("IMAGE",i.size,flush=True)
+          url="https://raw.githubusercontent.com/crowdbotp/OpenTraj/master/datasets/PETS-2009/data/annotations/PETS2009-S2L1.xml"
+          data=urllib.request.urlopen(url,timeout=35).read(20_000_000)
+          print("XML",len(data),"sha256",hashlib.sha256(data).hexdigest(),flush=True)
+          records=re.findall(rb'<frame number="(\d+)">(.*?)</frame>',data,re.S)
+          boxes=sum(len(re.findall(rb'<object id="\d+">\s*<box ',body)) for _,body in records)
+          print("GT FRAMES",len(records),"GT BODY RECTANGLES",boxes,flush=True)
+          print("FRAME IDS",records[0][0],records[-1][0],flush=True)
+          if len(records)<50 or boxes<100:raise RuntimeError("Missing pedestrian GT rectangles")
+          PY
