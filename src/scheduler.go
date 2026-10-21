@@ -16,6 +16,7 @@ type scanScheduler struct {
 	width, height   int
 	lastFull        time.Time
 	firstDecision   time.Time
+    decisionCount uint64
 }
 
 func (s *scanScheduler) reset(regions int, w, h int, profile int32) {
@@ -30,6 +31,7 @@ func (s *scanScheduler) reset(regions int, w, h int, profile int32) {
 	// several seconds on older processors. Start directly with camera crops.
 	s.lastFull = time.Time{}
 	s.firstDecision = time.Time{}
+    s.decisionCount = 0
 	if profile == 3 {
 		s.lastFull = time.Now()
 	}
@@ -202,6 +204,9 @@ func (s *scanScheduler) nextAdaptive(now time.Time, profile int32, views []Track
 		s.firstDecision = now
 	}
 	best, bestScore := 1, math.Inf(-1)
+    trackedBest, trackedScore, trackedAge := -1, math.Inf(-1), 0.0
+    exploreBest, exploreScore, exploreAge := -1, math.Inf(-1), 0.0
+    knownCameras := 0
 	for i := 1; i < len(regs); i++ {
 		// Unvisited tiles must age too. A constant age allowed a moving feed
 		// to starve every other camera forever, including stationary people.
@@ -226,11 +231,13 @@ func (s *scanScheduler) nextAdaptive(now time.Time, profile int32, views []Track
 		if !s.recentlyFound[i].IsZero() && now.Sub(s.recentlyFound[i]) < 7*time.Second && age >= 1 {
 			score += 20
 		}
+		knownHuman := false
 		for _, v := range views {
 			if !scanContainsBox(regs[i], v.Box, .82) {
 				continue
 			}
-			if age >= 1 {
+			knownHuman = true
+            if age >= 1 {
 				score += 75
 			}
 			if age >= 2.5 {
@@ -252,7 +259,41 @@ func (s *scanScheduler) nextAdaptive(now time.Time, profile int32, views []Track
 		if score > bestScore {
 			best, bestScore = i, score
 		}
+        if knownHuman {
+            knownCameras++
+            if score > trackedScore { trackedBest, trackedScore, trackedAge = i, score, age }
+        } else if score > exploreScore {
+            exploreBest, exploreScore, exploreAge = i, score, age
+        }
 	}
+    // A single expensive inference worker must split its time between
+    // verification of visible humans and discovery of new arrivals. Scores
+    // alone can create multi-second all-empty-camera bursts after 13 seconds.
+    // Explicit quotas avoid that while making the ratio adapt to crowd size.
+    if trackedBest > 0 && exploreBest > 0 {
+        s.decisionCount++
+        chooseTracked := false
+        switch {
+        case knownCameras <= 1:
+            chooseTracked = s.decisionCount%4 == 0
+        case knownCameras <= 2:
+            chooseTracked = s.decisionCount%3 == 0
+        case knownCameras <= 7:
+            chooseTracked = s.decisionCount%2 == 1
+        case knownCameras <= 11:
+            chooseTracked = s.decisionCount%4 != 0
+        default:
+            chooseTracked = s.decisionCount%8 != 0
+        }
+        // One or two known people should not disappear merely because
+        // other cameras contain moving trees. But never indefinitely deny a
+        // camera that has been quiet for over 13 seconds.
+        if knownCameras <= 6 && trackedAge >= 4 && exploreAge < 13 {
+            chooseTracked = true
+        }
+        if chooseTracked { return trackedBest }
+        return exploreBest
+    }
 	return best
 }
 func scanContainsBox(r scanRegion, b Rect, threshold float64) bool {
