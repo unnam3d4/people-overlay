@@ -174,6 +174,41 @@ func (s *scanScheduler) next(now time.Time, profile int32) int {
 	return best
 }
 
+// scanOwner assigns a person to its *unpadded* nominal screen tile.
+// ROI inference deliberately receives an extra 12% overlap to avoid cutting
+// partial bodies. That extra video belongs to a different tile: if its person
+// is treated as a hit in the neighbouring camera, the adaptive scheduler can
+// spend the entire CPU budget repeatedly scanning an empty padded camera.
+// This changes ONLY scheduling, never suppresses output detections or assumes
+// the physical RVi video pane is perfectly aligned with our nominal grid.
+func (s *scanScheduler) scanOwner(box Rect) int {
+    if s.previousProfile != 3 || s.width <= 0 || s.height <= 0 || box.W <= 0 || box.H <= 0 {
+        return 0
+    }
+    cx, cy := box.X + box.W*.5, box.Y + box.H*.5
+    if cx < 0 || cy < 0 || cx >= float64(s.width) || cy >= float64(s.height) {
+        return 0
+    }
+    col := int(cx * 4 / float64(s.width))
+    row := int(cy * 4 / float64(s.height))
+    if col < 0 || col > 3 || row < 0 || row > 3 {return 0}
+    return row * 4 + col + 1
+}
+
+// markScannedPeople only marks a CAMERA positive when at least one NN box
+// belongs to its own unpadded core. We still send ALL detections to the
+// existing tracker, including humans crossing nominal pixel boundaries.
+func (s *scanScheduler) markScannedPeople(index int, at time.Time, people []Rect) {
+    positive:=false
+    for _,person:=range people {
+        if index==0 || s.previousProfile!=3 || s.scanOwner(person)==index {
+            positive=true
+            break
+        }
+    }
+    s.markScanned(index,at,positive)
+}
+
 // Prevent ghosts from lingering across a full 16-camera scan cycle.
 // When somebody has already been seen, revisit that person's camera about
 // every four seconds; this makes disappearance detection responsive without
@@ -260,6 +295,9 @@ func (s *scanScheduler) nextAdaptive(now time.Time, profile int32, views []Track
 		}
 		knownHuman := false
 		for _, v := range views {
+            if s.scanOwner(v.Box)!=i {
+                continue
+            }
 			if !scanContainsBox(regs[i], v.Box, .82) {
 				continue
 			}
@@ -355,6 +393,7 @@ func(s *scanScheduler)confirmationRecheck(now time.Time,candidates []TrackView,r
  if ageOf(fallback)>13{return fallback}
  best,oldest:=fallback,.5
  for _,v:=range candidates{for i:=1;i<len(regs);i++{
+  if s.scanOwner(v.Box)!=i {continue}
   if !scanContainsBox(regs[i],v.Box,.9){continue}
   age:=ageOf(i)
   if age>oldest{best,oldest=i,age}
