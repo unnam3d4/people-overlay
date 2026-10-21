@@ -19,6 +19,8 @@ type personTrack struct {
  VelocityX,VelocityY float64
  Tile int
  AIMisses int
+ Anchor [49]byte
+ AnchorValid bool
 }
 
 type personTracker struct {
@@ -124,6 +126,36 @@ func motionShift(previous,current []byte,w,h int,box Rect)(float64,float64,bool)
  if same-best<3.5||second-best<.24{return 0,0,false}
  return float64(bestDX*trackingDownscale),float64(bestDY*trackingDownscale),true
 }
+// A background that became motionless after the human left must not
+// perpetually refresh visual evidence. Compare the static patch against
+// the last trustworthy person texture, not only the immediately prior frame.
+func sampleAnchor(gray []byte,w,h int,box Rect)([49]byte,bool){
+ var out [49]byte
+ if len(gray)<w*h||w<=0||h<=0{return out,false}
+ cx:=(box.X+box.W*.5)/trackingDownscale
+ cy:=(box.Y+box.H*.5)/trackingDownscale
+ hw:=box.W*.34/trackingDownscale
+ hh:=box.H*.35/trackingDownscale
+ if cx-hw<0||cy-hh<0||cx+hw>=float64(w)-.5||cy+hh>=float64(h)-.5{return out,false}
+ k:=0
+ for y:=0;y<7;y++{for x:=0;x<7;x++{
+  px:=int(math.Round(cx-hw+2*hw*float64(x)/6))
+  py:=int(math.Round(cy-hh+2*hh*float64(y)/6))
+  out[k]=gray[py*w+px]
+  k++
+ }}
+ return out,true
+}
+func anchorStillPresent(old,next [49]byte)bool{
+ total,large:=0,0
+ for i:=range old{
+  d:=absTrack(int(old[i])-int(next[i]))
+  total+=d
+  if d>25{large++}
+ }
+ return total<=49*16&&large<=13
+}
+
 // When clothing or the image is smooth, template matching has too little
 // texture to infer motion. A stable patch still gives positive visual evidence
 // of a stationary person (and will not be mistaken for a vanished silhouette).
@@ -158,6 +190,7 @@ func (t *personTracker)step(pixels []byte,w,h int,now time.Time) {
  }
  for i:=range t.people {
   p:=&t.people[i]
+  if !p.AnchorValid{p.Anchor,p.AnchorValid=sampleAnchor(t.prevGray,gw,gh,p.Box)}
   dx,dy,good:=motionShift(t.prevGray,gray,gw,gh,p.Box)
   dt:=now.Sub(p.LastStep).Seconds()
   if dt<=0||dt>.4{dt=.115}
@@ -166,9 +199,14 @@ func (t *personTracker)step(pixels []byte,w,h int,now time.Time) {
    // Low-texture CCTV clothing can remain perfectly still. Keep the
    // confirmed person's corners while their actual pixels remain stable.
    if stationaryAppearance(t.prevGray,gray,gw,gh,p.Box){
-    p.LastVisual=now
-    p.VelocityX=0;p.VelocityY=0
-    continue
+    current,valid:=sampleAnchor(gray,gw,gh,p.Box)
+    if !p.AnchorValid||(valid&&anchorStillPresent(p.Anchor,current)){
+     p.LastVisual=now
+     p.VelocityX=0;p.VelocityY=0
+     continue
+    }
+    // The original silhouette is absent although the *background*
+    // has become motionless. Keep LastVisual stale for prompt removal.
    }
    // Bridge at most 0.35s of weak or occluded video using recent velocity.
    // Never renew LastVisual here: lost tracks still expire promptly.
@@ -194,6 +232,11 @@ func (t *personTracker)step(pixels []byte,w,h int,now time.Time) {
   // ROI boundaries may not align with the actual RVi video grid.
   p.Tile=t.tileOf(next)
   if dx!=0||dy!=0{p.Box=next}
+  if good {
+   if sampled,ok:=sampleAnchor(gray,gw,gh,p.Box);ok{
+    p.Anchor=sampled;p.AnchorValid=true
+   }
+  }
  }
  t.prevGray=gray
  // Never merge IDs merely because two real people overlap on screen.
