@@ -256,7 +256,11 @@ func makeOverlay(w,h int)(uintptr,error){
 func registerHotkeys()error{
  for _,p:=range [][2]uintptr{{1,0x78},{2,0x79},{3,'1'},{4,'2'},{5,'3'},{6,0x75},{7,0x77},{8,0x76}}{
   ok,_,e:=pRegister.Call(0,p[0],modCtrlAlt,p[1])
-  if ok==0{return fmt.Errorf("cannot register hotkey %d: %v",p[0],e)}
+  if ok==0{
+   // Alarm/menu shortcuts are optional; another application can reserve F7/F8.
+   if p[0]>=7{logError(fmt.Errorf("optional hotkey %d unavailable: %v",p[0],e));continue}
+   return fmt.Errorf("cannot register hotkey %d: %v",p[0],e)
+  }
  }
  return nil
 }
@@ -344,7 +348,7 @@ func main(){
    case 5:colour.Store(3)
    case 6:testOnly.Store(!testOnly.Load());version.Add(1)
    case 7:tray.popupMenu()
-   case 8:alarmEnabled.Store(!alarmEnabled.Load())
+   case 8:alarmEnabled.Store(!alarmEnabled.Load());if !alarmEnabled.Load(){stopAviationAlert()}
    }
   }else{pTranslate.Call(uintptr(unsafe.Pointer(&m)));pDispatch.Call(uintptr(unsafe.Pointer(&m)))}
  }
