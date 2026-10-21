@@ -124,6 +124,8 @@ jobs:
         run: |
           $reports = Get-ChildItem benchmark-results/replay/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName }
           python scripts/evaluate_pixel_benchmark.py @reports --output benchmark-results/comparison.json
+      - name: Block candidate promotion on tracking regressions versus same-run v1.9
+        run: python scripts/gate_pixel_benchmark.py benchmark-results/comparison.json --max-recall-drop 0.05
       - name: Package portable downloads and source notices
         shell: pwsh
         run: |
