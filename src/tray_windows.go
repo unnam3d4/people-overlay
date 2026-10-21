@@ -34,6 +34,7 @@ const (
  menuIDTest=150
  menuIDNumbers=152
  menuIDCapture=153
+ menuIDFastAI=159
  menuIDAlarmToggle=160
  menuIDAlarmShort=161
  menuIDAlarmFull=162
@@ -175,6 +176,7 @@ func(t *appTray)popupMenu(){
  appendMenu(menu,menuIDSensNormal,"Чувствительность: обычная",sensitivity.Load()==2)
  appendMenu(menu,menuIDSensHigh,"Чувствительность: высокая",sensitivity.Load()==3)
  appendMenu(menu,menuIDContrast,"Усилить контраст камер",contrastMode.Load())
+ appendMenu(menu,menuIDFastAI,"Быстрый AI: 2 потока (больше нагрузка CPU)",fastAI.Load())
  separator(menu)
  appendMenu(menu,menuIDAlarmToggle,"Звуковая тревога (Ctrl+Alt+F7)",alarmEnabled.Load())
  appendMenu(menu,menuIDAlarmShort,"Сигнал: короткий, 3 импульса",!alarmFull.Load())
@@ -216,6 +218,7 @@ func(t *appTray)action(id uintptr){
  case menuIDSensNormal:sensitivity.Store(2)
  case menuIDSensHigh:sensitivity.Store(3)
  case menuIDContrast:contrastMode.Store(!contrastMode.Load())
+ case menuIDFastAI:fastAI.Store(!fastAI.Load())
  case menuIDAlarmToggle:alarmEnabled.Store(!alarmEnabled.Load());if !alarmEnabled.Load(){stopAviationAlert()}
  case menuIDAlarmShort:alarmFull.Store(false)
  case menuIDAlarmFull:alarmFull.Store(true)
