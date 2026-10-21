@@ -12,7 +12,7 @@ var (
  alarmWinmm=syscall.NewLazyDLL("winmm.dll")
  alarmPlaySound=alarmWinmm.NewProc("PlaySoundW")
  alarmWaves sync.Once
- alarmShort,alarmFull []byte
+ alarmShortPCM,alarmFullPCM []byte
  alarmLoadErr error
 )
 const(
@@ -23,13 +23,13 @@ const(
 )
 func playAviationAlert(full bool){
  alarmWaves.Do(func(){
-  alarmShort,alarmLoadErr=aviationAlarmWave(3)
+  alarmShortPCM,alarmLoadErr=aviationAlarmWave(3)
   if alarmLoadErr!=nil{return}
-  alarmFull,alarmLoadErr=aviationAlarmWave(8)
+  alarmFullPCM,alarmLoadErr=aviationAlarmWave(8)
  })
  if alarmLoadErr!=nil{logError(alarmLoadErr);return}
- wave:=alarmShort
- if full{wave=alarmFull}
+ wave:=alarmShortPCM
+ if full{wave=alarmFullPCM}
  if len(wave)==0{return}
  // The global slice stays alive for the entire session, even while
  // PlaySoundW plays it asynchronously.
