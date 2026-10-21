@@ -194,7 +194,10 @@ jobs:
   # Offline *application* replay of two filmed, independently annotated CCTV
   # corridors. The CI builder may download videos; release EXE never connects
   # to networks. This is a separate validation axis from photographic synth.
+  # Edinburgh CAVIAR hosts rejected Win2022 CI connections (10060).
+  # Keep it as an opt-in external connectivity test, never a fabricated pass.
   caviar-real-video:
+    if: github.event_name == 'workflow_dispatch'
     needs: package
     runs-on: windows-2022
     timeout-minutes: 25
@@ -227,4 +230,41 @@ jobs:
           path: |
             benchmark-results/caviar/
             _caviar_fixture/SOURCE-CAVIAR.json
+          retention-days: 90
+
+  # Public MIT-licensed pedestrian footage hosted on GitHub is accessible from
+  # Actions. Manual CVAT ground truth consists of HEAD LANDMARKS, NOT bboxes:
+  # report face-point coverage/identity separately, never as detection mAP.
+  github-real-video:
+    needs: package
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: v20-internal-candidates
+          path: DIST
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CI-only video decoder and process monitor
+        run: python -m pip install opencv-python-headless==4.11.0.86 numpy==2.2.6 psutil==7.2.2
+      - name: Verify pinned public source checksums and create filmed-person head-landmark manifests
+        run: python scripts/github_real_keypoint_replay.py --cache _real_source --output _real_video_fixture --duration 8
+      - name: Run actual baseline and candidate NCNN on identical real video screens sequentially
+        run: python scripts/run_pixel_benchmarks.py --exe v19=DIST/v19-benchmark-x64.exe --exe v20=DIST/PeopleOverlay_v2.0_candidate_YOLO26n_x64.exe --fixtures _real_video_fixture --output benchmark-results/github-real/replay
+      - name: Score manual face coverage, first response and ID switches without invented GT boxes
+        shell: pwsh
+        run: |
+          $reports = Get-ChildItem benchmark-results/github-real/replay/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName }
+          python scripts/evaluate_landmark_replay.py @reports --output benchmark-results/github-real/landmark-comparison.json --gate
+          if ($LASTEXITCODE -ne 0) { throw 'Actual filmed-person landmark regression compared with v1.9' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PeopleOverlay_v20_real_video_manual_face_landmark_evidence
+          path: |
+            benchmark-results/github-real/
+            _real_video_fixture/SOURCE-GITHUB-CVAT.json
           retention-days: 90
