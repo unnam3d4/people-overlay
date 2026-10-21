@@ -1,8 +1,8 @@
-name: Win7 tray and stable tracking QA
+name: v1.2 CCTV tracker stabilization QA
 
 on:
   push:
-    branches: [fix/win7-tray-stable-tracks]
+    branches: [fix/cctv-tracks-v12]
   workflow_dispatch:
 
 permissions:
@@ -78,6 +78,6 @@ jobs:
       - name: Publish verified portable EXEs
         uses: actions/upload-artifact@v4
         with:
-          name: PeopleOverlay_v1.1_Win7_Stability_Fix
+          name: PeopleOverlay_v1.2_CCTV_Tracking_Fix
           path: DIST/*.exe
           retention-days: 30
