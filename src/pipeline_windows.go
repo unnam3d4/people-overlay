@@ -270,7 +270,7 @@ func analyze(d *Detector) {
 					break
 				}
 				scannedIndex := regionIndex(regions, result.zone)
-				sch.markScanned(scannedIndex, now, len(result.detected) > 0)
+				sch.markScannedPeople(scannedIndex, now, result.detected)
 				tracker.observePeopleFromCapture(result.detected, result.captured, result.pixels, result.zone, result.capturedAt, now)
 				// A targeted camera crop that no longer contains the person is
 				// negative evidence. Two negative neural checks remove ghost corners.
