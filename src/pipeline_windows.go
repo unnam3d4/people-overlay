@@ -108,7 +108,10 @@ func analyze(d *Detector){
   active:=enabled.Load()&&!testOnly.Load()
   if !active{
    if lastEnabled{
+    // An in-flight old frame must not re-create markers after re-enabling.
+    epoch++
     tracker.reset()
+    alarm.resetScene()
     lastPaint=nil
     boxes.mu.Lock();boxes.items=nil;boxes.updated=time.Time{};boxes.mu.Unlock()
     version.Add(1)
