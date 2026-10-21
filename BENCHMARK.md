@@ -47,6 +47,39 @@ explicitly counted. Reentry starts another episode. Ghost duration follows the
 last matched ID until removal, marking reentry/end censoring. Center error uses
 matches only. Partly occluded full-body synthetic GT boxes are approximate.
 
+## Verified external surveillance footage: PETS2009 body boxes
+
+**Source:** PETS2009, University of Reading S2/L1, View001, mirrored
+by Kaggle (video images) and OpenTraj (manual person boxes and IDs).
+The bench downloaded 795 real video frames and verified 4650 manually
+annotated *whole-person* boxes from the pinned annotation checksum.
+Source footage is approximately 7 FPS, replayed at 15 FPS by repeating
+original frames. One-camera and 4x4 mosaics are constructed from the real
+image sequence; 4x4 is NOT a recording of 16 actual RVi feeds.
+
+These are measured **frame-weighted body IoU>=0.5 recall** from the
+Windows CI run 39679157909, not face-point coverage or field RVi recall:
+
+| Scenario (real body GT, replay 15 FPS) | v1.9 P | v1.9 R | v20 P | v20 R |
+|---|---:|---:|---:|---:|
+| One camera, fewer pedestrians | 51.8% | 52.3% | 46.9% | 44.0% |
+| One camera, crowded | 26.1% | 28.2% | 27.1% | 25.8% |
+| 4x4 screen, 4 actual feeds shown | 18.6% | 11.8% | 24.1% | 15.2% |
+| 4x4 screen, 16 feeds shown | 20.3% | 6.8% | 36.6% | 6.8% |
+
+Ground-truth appearance misses: 16-feed mosaic **58 (v1.9) versus 73
+(v20)**. v20 has a serious one-camera and arrival regression and **fails**
+the release quality gate. These figures pertain to the specific candidate
+commit associated with CI 39679157909; later commits require a fresh
+same-conditions replay before the numbers can be attributed to them.
+Reference: https://github.com/unnam3d4/people-overlay/actions/runs/39679157909
+
+**Engineering implication:** at 16 feeds and 7-FPS source frames,
+scanning a small 240x135 camera tile using a CPU-only 640-input detector
+does not provide acceptable full-body detection coverage. Strong claims
+about reliable detection on every camera are unsupported; improving
+tracking alone cannot discover a previously missed person.
+
 ## Native reference
 
 Ultralytics 8.4.78, FP32, identical Go-preprocessed input, two photographs:
