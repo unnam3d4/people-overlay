@@ -291,7 +291,15 @@ func main(){
   if e!=nil{logError(e);os.Exit(21)}
   d,e:=NewDetector(root)
   if e!=nil{logError(e);os.Exit(22)}
-  _,_,e=d.Predict(make([]float32,3*640*640))
+  input:=make([]float32,3*640*640)
+  _,_,e=d.Predict(input)
+  if e==nil {
+   // Verify both user-selectable AI thread counts on x64 and x86.
+   if tuned,ok:=interface{}(d).(interface{SetThreads(int)});ok{
+    tuned.SetThreads(2)
+    _,_,e=d.Predict(input)
+   }
+  }
   d.Close()
   if e!=nil{logError(e);os.Exit(23)}
   os.Exit(0)
