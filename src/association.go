@@ -68,7 +68,8 @@ func nestedROISubject(a,b Rect) bool {
  if coveringFraction(big,small)<.85{return false}
  dx:=math.Abs((small.X+small.W*.5)-(big.X+big.W*.5))
  if dx>big.W*.23{return false}
- if math.Abs(small.Y-big.Y)>big.H*.19{return false}
+ if small.Y-big.Y>big.H*.48||small.Y<big.Y-big.H*.06{return false}
+ if small.Y+small.H*.5>big.Y+big.H*.83{return false}
  // The crop should look like a partial detection of the same upright
  // silhouette, not another person standing elsewhere inside a loose box.
  if small.H>big.H*.94{return false}
