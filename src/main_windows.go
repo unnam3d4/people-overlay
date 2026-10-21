@@ -321,6 +321,7 @@ func main(){
  if e!=nil{logError(e);alert("People Overlay AI",e.Error());return}
  enabled.Store(true);colour.Store(1);scanMode.Store(3);sensitivity.Store(3)
  alarmEnabled.Store(true);alarmPauseSecs.Store(30)
+ loadAlarmPreferences()
  if e=registerHotkeys();e!=nil{alert("People Overlay AI",e.Error());return}
  defer func(){for i:=1;i<=8;i++{pUnregister.Call(0,uintptr(i))}}()
  tray,e:=newTray(hwnd)
@@ -356,7 +357,7 @@ func main(){
    case 5:colour.Store(3)
    case 6:testOnly.Store(!testOnly.Load());version.Add(1)
    case 7:tray.popupMenu()
-   case 8:alarmEnabled.Store(!alarmEnabled.Load());if !alarmEnabled.Load(){stopAviationAlert()}
+   case 8:alarmEnabled.Store(!alarmEnabled.Load());if !alarmEnabled.Load(){stopAviationAlert()};saveAlarmPreferences()
    }
   }else{pTranslate.Call(uintptr(unsafe.Pointer(&m)));pDispatch.Call(uintptr(unsafe.Pointer(&m)))}
  }
