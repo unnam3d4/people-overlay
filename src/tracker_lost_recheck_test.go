@@ -5,7 +5,9 @@ import (
  "time"
 )
 
-// Lost verified people were hidden from the urgent camera queue. On a 4x4
+// Lost verified people were hidden from the urgent camera queue.
+// With 4x4 measured neural gaps, the confirmed visual grace is 2.4s;
+// request an urgent retry just after that grace, before hard TTL 2.6s. On a 4x4
 // layout the AI could keep visiting empty tiles until the identity expired,
 // at which point the same human reappeared with a new ID.
 func TestLostConfirmedHumanGetsUrgentCCTVNeuralRecheck(t *testing.T) {
@@ -21,7 +23,7 @@ func TestLostConfirmedHumanGetsUrgentCCTVNeuralRecheck(t *testing.T) {
  tr.observePeople([]Rect{box},start)
  original:=tr.views(start)
  if len(original)!=1 {t.Fatalf("strong person not confirmed: %+v",original)}
- now:=start.Add(1350*time.Millisecond)
+ now:=start.Add(2450*time.Millisecond)
  if views:=tr.views(now);len(views)!=0 {t.Fatalf("lost visuals must not keep old overlay visible: %+v",views)}
  pending:=tr.tentativeViews(now)
  if len(pending)!=1||pending[0].ID!=original[0].ID{t.Fatalf("lost verified person not sent for urgent recheck: %+v",pending)}
@@ -34,8 +36,8 @@ func TestLostConfirmedHumanGetsUrgentCCTVNeuralRecheck(t *testing.T) {
   t.Fatalf("lost person camera should preempt normal low-activity scan: got tile %d wanted %d",got,tile)
  }
  // Epoch/capture invariants still apply to the accelerated scan.
- tr.noteRegionScanSnapshot(regs[tile],start.Add(1450*time.Millisecond),start.Add(50*time.Millisecond),tile,original)
- if got:=tr.schedulerViews(start.Add(1450*time.Millisecond));len(got)!=1{
+ tr.noteRegionScanSnapshot(regs[tile],start.Add(2550*time.Millisecond),start.Add(50*time.Millisecond),tile,original)
+ if got:=tr.schedulerViews(start.Add(2550*time.Millisecond));len(got)!=1{
   t.Fatalf("one negative capture prematurely erased lost person: %+v",got)
  }
 }
