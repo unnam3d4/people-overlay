@@ -2,7 +2,7 @@
 
 package main
 
-import("errors";"fmt";"os";"path/filepath";"runtime";"syscall";"unsafe")
+import("errors";"fmt";"path/filepath";"runtime";"syscall";"unsafe")
 
 type Detector struct{
  dll *syscall.DLL
