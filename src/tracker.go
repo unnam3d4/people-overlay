@@ -349,6 +349,58 @@ func capturedAnchorTranslation(anchor [49]byte, gray []byte, w, h int, box Rect,
 	return float64(best.dx), float64(best.dy), true
 }
 
+// When the frame-to-frame block matcher says "still", check a very small
+// neighbourhood against texture originally verified by AI. A 2px shift can
+// otherwise be reported as zero motion even though the silhouette slowly
+// walks away from its corners. Do not turn a near-equal background match into
+// motion: require a meaningful gain over keeping the original location.
+func anchorFineMotion(anchor [49]byte, gray []byte, w, h int, box Rect) (float64, float64, bool) {
+    patch0, valid := sampleAnchor(gray,w,h,box)
+    if !valid { return 0,0,false }
+    anchorError:=func(next [49]byte) float64 {
+        var total int
+        for i:=range anchor { total+=absTrack(int(anchor[i])-int(next[i])) }
+        return float64(total)/49
+    }
+    zeroScore:=anchorError(patch0)
+    bestScore:=math.Inf(1)
+    var bestDX,bestDY int
+    type alternative struct {dx,dy int; score float64}
+    alternatives:=make([]alternative,0,48)
+    // -6..6 screen pixels in 2px steps: 49 patches x 49 pixels.
+    // Bounded cost is much smaller than a second neural inference.
+    for dy:=-6;dy<=6;dy+=2 {
+        for dx:=-6;dx<=6;dx+=2 {
+            moved:=box
+            moved.X+=float64(dx)
+            moved.Y+=float64(dy)
+            next,ok:=sampleAnchor(gray,w,h,moved)
+            if !ok||!anchorStillPresent(anchor,next){continue}
+            score:=anchorError(next)
+            alternatives=append(alternatives,alternative{dx,dy,score})
+            if score<bestScore {
+                bestScore,bestDX,bestDY=score,dx,dy
+            }
+        }
+    }
+    if math.IsInf(bestScore,1) {return 0,0,false}
+    if bestDX==0&&bestDY==0 {return 0,0,true}
+    // Avoid fake movement on flat, repeating or merely noisy backgrounds.
+    if !anchorStillPresent(anchor,patch0) {
+        // If the old position is gone, a candidate must be both unambiguous
+        // and close to the AI-confirmed target.
+        if bestScore>12{return 0,0,false}
+    } else if zeroScore-bestScore<3.0 {
+        return 0,0,true
+    }
+    for _,c:=range alternatives {
+        if absTrack(c.dx-bestDX)>4||absTrack(c.dy-bestDY)>4 {
+            if c.score-bestScore<2.0 {return 0,0,false}
+        }
+    }
+    return float64(bestDX),float64(bestDY),true
+}
+
 // When clothing or the image is smooth, template matching has too little
 // texture to infer motion. A stable patch still gives positive visual evidence
 // of a stationary person (and will not be mistaken for a vanished silhouette).
@@ -395,6 +447,13 @@ func (t *personTracker) step(pixels []byte, w, h int, now time.Time) {
 			p.Anchor, p.AnchorValid = sampleAnchor(t.prevGray, gw, gh, p.Box)
 		}
 		dx, dy, good := motionShift(t.prevGray, gray, gw, gh, p.Box)
+        // An apparently stationary block is not necessarily a stationary
+        // person: resolve sub-block movement using AI-verified texture.
+        if p.AnchorValid && good && dx==0 && dy==0 {
+            if fx,fy,ok:=anchorFineMotion(p.Anchor,gray,gw,gh,p.Box);ok && (fx!=0||fy!=0) {
+                dx,dy=fx,fy
+            }
+        }
         // Sparse 18-24px CCTV silhouettes can be too narrow for the 63-point
         // consecutive-frame matcher, especially after an odd-pixel move or
         // repeated video frame. On failure, reacquire only the *originally
