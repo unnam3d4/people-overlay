@@ -12,12 +12,14 @@ type inferenceRequest struct {
  scale,padX,padY float64
  zone scanRegion
  epoch uint64
+ captured []TrackView
 }
 
 type inferenceReply struct {
  detected []Rect
  zone scanRegion
  epoch uint64
+ captured []TrackView
  duration time.Duration
  err error
 }
@@ -41,7 +43,7 @@ func inferenceWorker(detector *Detector,requests <-chan inferenceRequest,replies
      found[i].Y+=float64(req.zone.y)
     }
    }
-   result:=inferenceReply{detected:found,zone:req.zone,epoch:req.epoch,duration:time.Since(begun),err:err}
+   result:=inferenceReply{detected:found,zone:req.zone,epoch:req.epoch,captured:req.captured,duration:time.Since(begun),err:err}
    // One result slot suffices because requests are unbuffered and producer
    // deliberately never queues stale camera images.
    select{case replies<-result:case <-time.After(500*time.Millisecond):}
@@ -56,7 +58,7 @@ func analyze(d *Detector){
  var snap dib
  defer snap.close()
 
- req:=make(chan inferenceRequest)
+ req:=make(chan inferenceRequest,1)
  replies:=make(chan inferenceReply,1)
  workerDone:=make(chan struct{})
  go func(){defer close(workerDone);inferenceWorker(d,req,replies)}()
@@ -66,6 +68,7 @@ func analyze(d *Detector){
  var tracker personTracker
  var regions []scanRegion
  var epoch uint64
+ var pending bool
  var nextInference time.Time
  var lastBusy time.Duration=350*time.Millisecond
  lastEnabled:=false
@@ -112,6 +115,9 @@ func analyze(d *Detector){
    regions=regionsForProfile(w,h,profile)
    sch.reset(len(regions),w,h,profile)
    tracker.reset()
+   cols:=0
+   if profile==3{cols=4}
+   tracker.layout(w,h,cols)
    epoch++
    nextInference=time.Time{}
    publish(time.Now())
@@ -134,6 +140,7 @@ func analyze(d *Detector){
   for drain:=true;drain;{
    select{
    case result:=<-replies:
+    pending=false
     if result.epoch!=epoch{continue}
     if result.err!=nil{
      logError(result.err)
@@ -142,7 +149,8 @@ func analyze(d *Detector){
      break
     }
     sch.markScanned(regionIndex(regions,result.zone),now,len(result.detected)>0)
-    tracker.observePeople(result.detected,now)
+    corrected:=compensateLateDetections(result.detected,result.captured,tracker.views(now))
+    tracker.observePeople(corrected,now)
     lastBusy=result.duration
     nextInference=now.Add(throttleFor(profile,result.duration))
    default:
@@ -153,18 +161,20 @@ func analyze(d *Detector){
 
   // The unbuffered request channel is a backpressure mechanism: when AI is
   // busy, send fails instantly instead of accumulating old video frames.
-  if !now.Before(nextInference){
+  if !pending&&!now.Before(nextInference){
    index:=sch.next(now,profile)
    region:=regions[index]
-   if len(req)==0{
-    input,scale,px,py:=prepareRegionFrameEnhanced(snap.pixels,w,h,region,contrastMode.Load())
-    if input!=nil {
-     select{
-     case req<-inferenceRequest{input:input,scale:scale,padX:px,padY:py,zone:region,epoch:epoch}:
-      sch.markScanned(index,now,false)
-      nextInference=now.Add(throttleFor(profile,lastBusy))
-     default:
-     }
+   input,scale,px,py:=prepareRegionFrameEnhanced(snap.pixels,w,h,region,contrastMode.Load())
+   if input!=nil{
+    captured:=tracker.views(now)
+    // Only ever queue ONE request. Unlike v1.0 this does not allocate and
+    // preprocess a new 640x640 frame on every capture while AI is occupied.
+    select{
+    case req<-inferenceRequest{input:input,scale:scale,padX:px,padY:py,zone:region,epoch:epoch,captured:captured}:
+     pending=true
+     sch.markScanned(index,now,false)
+     nextInference=now.Add(throttleFor(profile,lastBusy))
+    default:
     }
    }
   }
