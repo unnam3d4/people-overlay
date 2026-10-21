@@ -35,6 +35,9 @@ type benchmarkManifest struct {
 	// Zero uses the actual production tracking/capture cadence. Positive values
 	// explicitly override it for a tracker stress test, and are reported.
 	CaptureCadenceMS float64          `json:"capture_cadence_ms,omitempty"`
+ // Benchmark-only artificial lower bound for neural latency, in video clock
+ // time. Does not sleep and does not alter reported actual NCNN CPU times.
+ InferenceDelayFloorMS float64 `json:"inference_delay_floor_ms,omitempty"`
 	Frames           []benchmarkFrame `json:"frames"`
 }
 type benchmarkTimes struct {
@@ -205,6 +208,9 @@ func runBenchmarkCLI(args []string) error {
 	if manifest.Threads < 1 || manifest.Threads > 2 {
 		return fmt.Errorf("threads must be 1 or 2")
 	}
+ if manifest.InferenceDelayFloorMS < 0 || manifest.InferenceDelayFloorMS > 5000 {
+  return fmt.Errorf("inference_delay_floor_ms must be between 0 and 5000")
+ }
 	base, e := filepath.Abs(filepath.Dir(args[1]))
 	if e != nil {
 		return e
@@ -239,7 +245,7 @@ func runBenchmarkCLI(args []string) error {
 	}
 	aware, hasAware := interface{}(&tracker).(benchmarkCaptureObserver)
 	negative, hasNegative := interface{}(&tracker).(benchmarkNegativeObserver)
-	report := benchmarkReport{Schema: 1, Manifest: manifest, CaptureAware: hasAware, Protocol: "real PNG pixels -> production 640 preprocessing -> Detector.Predict -> decodePeople; deterministic video timestamps; one measured-delay pending worker, no queue; production capture cadence unless explicitly overridden; disk loading excluded; synchronous offline replay does not model concurrent CPU contention"}
+	report := benchmarkReport{Schema: 1, Manifest: manifest, CaptureAware: hasAware, Protocol: "real PNG pixels -> production 640 preprocessing -> Detector.Predict -> decodePeople; deterministic video timestamps; one pending worker; measured NCNN delivery or manifest lower-bound 300/700 ms delay when set; production capture cadence unless explicitly overridden; disk loading excluded; synchronous offline replay does not model concurrent CPU contention. InferenceDelayFloorMS adds video-clock latency, not real CPU work."}
 	start := time.Now()
 	origin := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	var regs []scanRegion
@@ -328,6 +334,7 @@ func runBenchmarkCLI(args []string) error {
 						}
 					}
 					lastBusy = time.Duration((result.Times.PrepareMS + result.Times.InferMS + result.Times.DecodeMS) * float64(time.Millisecond))
+     if floor:=time.Duration(manifest.InferenceDelayFloorMS*float64(time.Millisecond));floor>lastBusy{lastBusy=floor}
 					tracker.maxAIAge = recheckTTL(len(regs), manifest.Profile, lastBusy)
 					nextInference = now.Add(throttleFor(manifest.Profile, lastBusy))
 				} else {
@@ -355,6 +362,7 @@ func runBenchmarkCLI(args []string) error {
 				}
 				tm.CopyMS = copyMS
 				delay := time.Duration((tm.PrepareMS + tm.InferMS + tm.DecodeMS) * float64(time.Millisecond))
+    if floor:=time.Duration(manifest.InferenceDelayFloorMS*float64(time.Millisecond));floor>delay{delay=floor}
 				ready = now.Add(delay)
 				report.Inferences = append(report.Inferences, benchmarkInference{CaptureFrame: i, CapturedMS: obs.TimestampMS, ReadyMS: benchmarkMS(ready.Sub(origin)), RegionIndex: index, Region: Rect{X: float64(zone.x), Y: float64(zone.y), W: float64(zone.w), H: float64(zone.h)}, Detections: found, Times: tm})
 				pendingIndex = len(report.Inferences) - 1
