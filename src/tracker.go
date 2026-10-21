@@ -752,7 +752,7 @@ func (t *personTracker) prune(now time.Time) {
 				// slow inference is in flight.
 				keep = append(keep, p)
 				continue
-			} else if aiAge > 700*time.Millisecond && visualAge > 700*time.Millisecond {
+			} else if aiAge > 1200*time.Millisecond && visualAge > 700*time.Millisecond {
 				p.State = trackLost
 			} else {
 				p.State = trackConfirmed
