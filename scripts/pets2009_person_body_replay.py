@@ -76,20 +76,22 @@ def source_frames(root):
 
 
 def choose_window(gt,desired_count,length=795,fps=SOURCE_FPS,duration=7):
-    """Pick event-rich contiguous filmed segment with no invented boxes."""
+    """Pick DISTINCT event windows for sparse and crowded real filmed scenes."""
     count=max(1,int(duration*fps))
-    best_idx,best=-1,-1
+    choices=[]
     for start in range(0,length-count,12):
-        total=sum(len(gt.get(i,())) for i in range(start,start+count))
-        if desired_count==1:
-            # A less crowded sequence evaluates single-person tracking.
-            score=sum(1 for i in range(start,start+count) if len(gt.get(i,()))==1)
-        else:
-            score=sum(1 for i in range(start,start+count) if len(gt.get(i,()))>=desired_count)
-        if score>best or (score==best and total>sum(len(gt.get(i,())) for i in range(max(0,best_idx),max(0,best_idx)+count))):
-            best,best_idx=score,start
-    if best_idx<0:raise ValueError("cannot identify valid PETS clip")
-    return best_idx
+        counts=[len(gt.get(i,())) for i in range(start,start+count)]
+        active=sum(n>0 for n in counts)
+        total=sum(counts)
+        # Each selected clip must contain real people for most frames.
+        if active<count*.8:
+            continue
+        choices.append((total,start))
+    if not choices:
+        raise ValueError("PETS2009 lacks complete person-body annotations")
+    if desired_count==1:
+        return min(choices,key=lambda v:(v[0],v[1]))[1]
+    return max(choices,key=lambda v:(v[0],-v[1]))[1]
 
 
 def generate(output,video_files,gt,duration=7,fps=15):
@@ -100,6 +102,11 @@ def generate(output,video_files,gt,duration=7,fps=15):
     frames_dir.mkdir(parents=True,exist_ok=True)
     single_start=choose_window(gt,1,duration=duration)
     crossing_start=choose_window(gt,3,duration=duration)
+    if crossing_start==single_start:
+        # Avoid misleading reports that score the identical video twice.
+        crossing_start=min(len(video_files)-int(duration*SOURCE_FPS)-1,
+                           single_start+int(20*SOURCE_FPS))
+        print("PETS fallback alternate event start",crossing_start,flush=True)
     # 4x4 of real filmed scenes, with either 4 or 16 video feeds active.
     variants=[
       ("single_less_crowded",[0],[single_start]),
