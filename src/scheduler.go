@@ -14,6 +14,10 @@ type scanScheduler struct {
 	recentlyFound   []time.Time
     // A one-shot arrival signal, never a perpetual motion priority.
     motionArrival []bool
+    // Non-overlapping core signatures locate the owner of new motion.
+    // Detection crops may overlap across neighbouring RVi camera tiles.
+    coreFingerprint [][]uint8
+    coreActivity []float64
 	previousProfile int32
 	width, height   int
 	lastFull        time.Time
@@ -27,6 +31,8 @@ func (s *scanScheduler) reset(regions int, w, h int, profile int32) {
 	s.activity = make([]float64, regions)
 	s.recentlyFound = make([]time.Time, regions)
     s.motionArrival = make([]bool, regions)
+    s.coreFingerprint = make([][]uint8, regions)
+    s.coreActivity = make([]float64, regions)
 	s.previousProfile = profile
 	s.width = w
 	s.height = h
@@ -91,12 +97,6 @@ func (s *scanScheduler) observe(frame []byte, w, h int, regions []scanRegion) bo
 		cur := tinySignature(frame, w, h, regions[i])
 		if s.fingerprint[i] != nil {
 			measured := movementScore(s.fingerprint[i], cur)
-            // New objects must be checked before a full sweep of overdue
-            // empty cameras. A sustained moving tree won't retrigger
-            // without returning to low activity first.
-            if measured > .014 && s.activity[i] < .008 {
-                s.motionArrival[i] = true
-            }
 			compared++
 			if measured >= .72 {
 				hardCuts++
@@ -105,6 +105,20 @@ func (s *scanScheduler) observe(frame []byte, w, h int, regions []scanRegion) bo
 			s.activity[i] = math.Max(measured, s.activity[i]*.48)
 		}
 		s.fingerprint[i] = cur
+        if s.previousProfile == 3 && i < 17 && i < len(s.coreFingerprint) {
+            col,row:=(i-1)%4,(i-1)/4
+            x1,x2:=col*w/4,(col+1)*w/4
+            y1,y2:=row*h/4,(row+1)*h/4
+            core:=tinySignature(frame,w,h,scanRegion{x1,y1,x2-x1,y2-y1})
+            if s.coreFingerprint[i]!=nil {
+                amount:=movementScore(s.coreFingerprint[i],core)
+                if amount>.014 && s.coreActivity[i]<.008 {
+                    s.motionArrival[i]=true
+                }
+                s.coreActivity[i]=math.Max(amount,s.coreActivity[i]*.48)
+            }
+            s.coreFingerprint[i]=core
+        }
 	}
 	// Require a synchronized change of at least 2/3 camera tiles. A walking
 	// person in one feed or compression noise must never reset all tracking.
