@@ -294,7 +294,7 @@ func main(){
   }
   if m.Message==trayMessage{
    switch uint32(m.LParam){
-   case wmRButtonUp,wmContextMenu:tray.popupMenu()
+   case wmRButtonUp,wmContextMenu,wmLButtonUp:tray.popupMenu()
    case wmLButtonDouble:enabled.Store(!enabled.Load());version.Add(1)
    }
    continue
