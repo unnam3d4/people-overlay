@@ -67,9 +67,27 @@ func trackMatchScore(p personTrack, d Rect, cell int, at time.Time) float64 {
 	predicted := predictedTrackBox(p, at)
 	iouNow, iouPred := overlap(d, p.Box), overlap(d, predicted)
 	dist := centerSeparation(d, predicted)
-	if dist > .79 || (iouNow < .08 && iouPred < .08 && dist > .42) {
-		return 0
-	}
+    // On slow CPU one crop from another camera may execute before we
+    // re-detect this pedestrian. A person can move farther than 0.79 body
+    // widths between real neural detections: the old fixed gate discarded
+    // correct boxes and created a new ID at every such revisit.
+    gap := 0.0
+    if !p.LastAI.IsZero() && at.After(p.LastAI) {
+        gap = math.Min(2.4, at.Sub(p.LastAI).Seconds())
+    }
+    // Keep the original tight gate for fresh evidence or an unreliable
+    // shape. Longer matches require the SAME video tile and similar person
+    // size. Unlike unrestricted nearest-neighbour matching this cannot
+    // transfer IDs between non-overlapping cameras.
+    maxDistance := .79
+    stale := gap > .55 && wRatio*hRatio >= .50
+    if stale {
+        maxDistance += math.Min(1.25, (gap-.55)*.80)
+    }
+    if dist > maxDistance { return 0 }
+    if iouNow < .08 && iouPred < .08 && dist > .42 && !stale {
+        return 0
+    }
 	// With tiled cameras do not transfer a track between separate video feeds
 	// just because adjacent images happen to resemble one another.
 	if p.Tile != 0 && cell != 0 && p.Tile != cell && math.Max(iouNow, iouPred) < .46 {
@@ -77,8 +95,17 @@ func trackMatchScore(p personTrack, d Rect, cell int, at time.Time) float64 {
 	}
 	// Explicitly favour trajectory continuity, then current overlap and shape.
 	// This makes crossed detection order irrelevant to identity assignment.
-	score := 70*iouPred + 25*iouNow + 18*(1-math.Min(1, dist)) +
+    // An older but geometrically consistent track can still win a global
+    // assignment when the person walks 1+ body widths between detector calls.
+    // Never reward negative distance beyond one width, as the old formula did.
+    proximity := 1-math.Min(1,dist/maxDistance)
+	score := 70*iouPred + 25*iouNow + 18*proximity +
 		8*wRatio*hRatio + 3*float64(d.Score)
+    if stale && iouNow < .08 && iouPred < .08 {
+        // A remote geometric recovery is weaker than recent visual overlap.
+        // Preserve ties in favour of nearer / more recent identities.
+        score -= 2 + math.Min(3,gap)
+    }
 	if p.Tile == cell {
 		score += 2
 	}
