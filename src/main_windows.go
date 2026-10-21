@@ -104,11 +104,12 @@ var scanMode atomic.Int32
 var sensitivity atomic.Int32
 var contrastMode atomic.Bool
 var captureRequested atomic.Bool
+var showNumbers atomic.Bool
 var testOnly atomic.Bool
 var colour atomic.Int32
 var stopped atomic.Bool
 var version atomic.Int64
-var boxes struct{mu sync.RWMutex;items []Rect;updated time.Time}
+var boxes struct{mu sync.RWMutex;items []TrackView;updated time.Time}
 func smooth(next,prev []Rect)[]Rect{
  for i:=range next{
   best,idx:=.18,-1
@@ -145,81 +146,6 @@ func saveCapture(pixels []byte,w,h int){
  if ce:=file.Close();e==nil{e=ce}
  if e!=nil{logError(e);return}
  logError(fmt.Errorf("Diagnostic screenshot saved locally: %s",path))
-}
-func analyze(d *Detector){
- screen,_,_:=pDC.Call(0)
- if screen==0{logError(fmt.Errorf("GetDC failed"));return}
- defer pReleaseDC.Call(0,screen)
- var snap dib
- defer snap.close()
- var cache []regionCache
- var regs []scanRegion
- var scheduler scanScheduler
- for !stopped.Load(){
-  if !enabled.Load()||testOnly.Load(){
-   time.Sleep(130*time.Millisecond)
-   continue
-  }
-  w,h:=screenSize()
-  if w<64||h<64{time.Sleep(time.Second);continue}
-  profile:=scanMode.Load()
-  if profile<1||profile>3{profile=2}
-  if snap.w!=w||snap.h!=h||profile!=scheduler.previousProfile{
-   snap.close()
-   var e error
-   snap,e=newDIB(screen,w,h)
-   if e!=nil{logError(e);time.Sleep(time.Second);continue}
-   regs=regionsForProfile(w,h,profile)
-   cache=make([]regionCache,len(regs))
-   scheduler.reset(len(regs),w,h,profile)
-   boxes.mu.Lock();boxes.items=nil;boxes.updated=time.Time{};boxes.mu.Unlock()
-   version.Add(1)
-  }
-  start:=time.Now()
-  ok,_,_:=pBlt.Call(snap.dc,0,0,uintptr(w),uintptr(h),screen,0,0,srcCopy)
-  if ok==0{logError(fmt.Errorf("BitBlt failed"));time.Sleep(time.Second);continue}
-  if captureRequested.Swap(false){
-   // Take an independent screenshot as requested from the tray.
-   copyPixels:=append([]byte(nil),snap.pixels...)
-   go saveCapture(copyPixels,w,h)
-  }
-  scheduler.observe(snap.pixels,w,h,regs)
-  index:=scheduler.next(time.Now(),profile)
-  reg:=regs[index]
-  input,scale,px,py:=prepareRegionFrameEnhanced(snap.pixels,w,h,reg,contrastMode.Load())
-  if input==nil{time.Sleep(200*time.Millisecond);continue}
-  output,n,e:=d.Predict(input)
-  if e!=nil{
-   logError(e);enabled.Store(false)
-   // No repeated modal errors that interrupt CCTV.
-   version.Add(1)
-   continue
-  }
-  found:=decodePeople(output,n,reg.w,reg.h,scale,px,py,confidenceThreshold(sensitivity.Load()))
-  for i:=range found{
-   found[i].X+=float64(reg.x)
-   found[i].Y+=float64(reg.y)
-  }
-  now:=time.Now()
-  cache[index]=regionCache{found:found,updated:now}
-  scheduler.markScanned(index,now,len(found)>0)
-  ttl:=time.Duration(len(regs))*850*time.Millisecond
-  if ttl<6*time.Second{ttl=6*time.Second}
-  if ttl>22*time.Second{ttl=22*time.Second}
-  result:=combineCacheList(cache,now,ttl)
-  boxes.mu.Lock()
-  result=smooth(result,boxes.items)
-  boxes.items=result
-  boxes.updated=now
-  boxes.mu.Unlock()
-  version.Add(1)
-  busy:=time.Since(start)
-  delay:=throttleFor(profile,busy)
-  for deadline:=time.Now().Add(delay);!stopped.Load()&&time.Now().Before(deadline);{
-   if !enabled.Load()||testOnly.Load()||scanMode.Load()!=profile{break}
-   time.Sleep(45*time.Millisecond)
-  }
- }
 }
 func maxI(a,b int)int{if a>b{return a};return b}
 func minI(a,b int)int{if a<b{return a};return b}
@@ -287,10 +213,10 @@ func render(hwnd uintptr){
    if test{drawCorners(&layer,[]Rect{{X:float64(w)/2-80,Y:float64(h)/2-140,W:160,H:280}},c)
    }else{
     boxes.mu.RLock()
-    items:=append([]Rect(nil),boxes.items...)
+    items:=append([]TrackView(nil),boxes.items...)
     t:=boxes.updated
     boxes.mu.RUnlock()
-    if time.Since(t)<3500*time.Millisecond{drawCorners(&layer,items,c)}
+    if time.Since(t)<2800*time.Millisecond{drawTrackedCorners(&layer,items,c,showNumbers.Load())}
    }
   }
   pos,z,origin:=point{},dimensions{int32(w),int32(h)},point{}
@@ -345,8 +271,11 @@ func main(){
  tray,e:=newTray(hwnd)
  if e!=nil{logError(e);alert("People Overlay AI","Не удалось создать значок трея: "+e.Error());return}
  defer tray.close()
- go render(hwnd)
- go analyze(d)
+ var workers sync.WaitGroup
+ workers.Add(2)
+ go func(){defer workers.Done();render(hwnd)}()
+ go func(){defer workers.Done();analyze(d)}()
+ defer func(){stopped.Store(true);workers.Wait()}()
  var m message
  for{
   r,_,_:=pMessage.Call(uintptr(unsafe.Pointer(&m)),0,0,0)
