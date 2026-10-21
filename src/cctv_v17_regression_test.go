@@ -51,8 +51,11 @@ func TestStalePersonAfterTwoNegativeScansClears(t *testing.T){
  tr.noteRegionScan(camera,now.Add(time.Second))
  if len(tr.views(now.Add(time.Second)))!=1{t.Fatal("premature deletion")}
  camera=scanRegion{x:0,y:0,w:300,h:300}
+ // Simulate stationary pixels still matching while neural recheck finishes.
+ tr.people[0].LastVisual=now.Add(3500*time.Millisecond)
  tr.noteRegionScan(camera,now.Add(4*time.Second))
  if len(tr.views(now.Add(4*time.Second)))!=1{t.Fatal("one miss must tolerate occlusion")}
+ tr.people[0].LastVisual=now.Add(7500*time.Millisecond)
  tr.noteRegionScan(camera,now.Add(8*time.Second))
  if len(tr.views(now.Add(8*time.Second)))!=0{t.Fatal("obsolete corners stay pinned after camera revisits")}
 }
