@@ -12,6 +12,8 @@ type scanScheduler struct {
 	fingerprint     [][]uint8
 	activity        []float64
 	recentlyFound   []time.Time
+    // A one-shot arrival signal, never a perpetual motion priority.
+    motionArrival []bool
 	previousProfile int32
 	width, height   int
 	lastFull        time.Time
@@ -24,6 +26,7 @@ func (s *scanScheduler) reset(regions int, w, h int, profile int32) {
 	s.fingerprint = make([][]uint8, regions)
 	s.activity = make([]float64, regions)
 	s.recentlyFound = make([]time.Time, regions)
+    s.motionArrival = make([]bool, regions)
 	s.previousProfile = profile
 	s.width = w
 	s.height = h
@@ -88,6 +91,12 @@ func (s *scanScheduler) observe(frame []byte, w, h int, regions []scanRegion) bo
 		cur := tinySignature(frame, w, h, regions[i])
 		if s.fingerprint[i] != nil {
 			measured := movementScore(s.fingerprint[i], cur)
+            // New objects must be checked before a full sweep of overdue
+            // empty cameras. A sustained moving tree won't retrigger
+            // without returning to low activity first.
+            if measured > .014 && s.activity[i] < .008 {
+                s.motionArrival[i] = true
+            }
 			compared++
 			if measured >= .72 {
 				hardCuts++
@@ -106,6 +115,7 @@ func (s *scanScheduler) markScanned(index int, now time.Time, detected bool) {
 		return
 	}
 	s.lastScan[index] = now
+    if index < len(s.motionArrival) { s.motionArrival[index] = false }
 	if index == 0 {
 		s.lastFull = now
 	}
@@ -221,6 +231,9 @@ func (s *scanScheduler) nextAdaptive(now time.Time, profile int32, views []Track
 		// has perpetual movement (e.g. trees, reflections, compression noise).
 		score := math.Min(30, age) * 6
 		score += math.Min(1, s.activity[i]) * 180
+        if i<len(s.motionArrival) && s.motionArrival[i] {
+            score += 400
+        }
 		if s.activity[i] > .012 {
 			score += 22
 		}
@@ -256,6 +269,8 @@ func (s *scanScheduler) nextAdaptive(now time.Time, profile int32, views []Track
 		if age > 13 {
 			score += 200
 		}
+        // Hard bounded starvation despite persistent flashing/new motion.
+        if age > 18 {score += 600}
 		if score > bestScore {
 			best, bestScore = i, score
 		}
@@ -290,6 +305,9 @@ func (s *scanScheduler) nextAdaptive(now time.Time, profile int32, views []Track
         // camera that has been quiet for over 13 seconds.
         if knownCameras <= 6 && trackedAge >= 4 && exploreAge < 13 {
             chooseTracked = true
+        }
+        if exploreBest > 0 && exploreBest < len(s.motionArrival) && s.motionArrival[exploreBest] {
+            return exploreBest
         }
         if chooseTracked { return trackedBest }
         return exploreBest
