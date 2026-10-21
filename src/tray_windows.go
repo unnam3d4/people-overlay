@@ -21,6 +21,7 @@ const (
  menuReturnCmd=0x100
  menuRightButton=2
  menuIDToggle=100
+ menuIDProfileSingle=109
  menuIDProfileEco=110
  menuIDProfileBalanced=111
  menuIDProfileCCTV=112
@@ -34,6 +35,8 @@ const (
  menuIDTest=150
  menuIDNumbers=152
  menuIDCapture=153
+ menuIDVideoProbe=154
+ menuIDCaptureCompat=155
  menuIDFastAI=159
  menuIDAlarmToggle=160
  menuIDAlarmShort=161
@@ -193,6 +196,7 @@ func(t *appTray)popupMenu(){
  info:=syscall.StringToUTF16Ptr(stats)
  trayAppendMenu.Call(menu,menuString|1,0,uintptr(unsafe.Pointer(info)))
  separator(menu)
+ appendMenu(menu,menuIDProfileSingle,"Режим: одна камера на весь экран",scanMode.Load()==0)
  appendMenu(menu,menuIDProfileEco,"Режим: экономный (2×2)",scanMode.Load()==1)
  appendMenu(menu,menuIDProfileBalanced,"Режим: сбалансированный (3×3)",scanMode.Load()==2)
  appendMenu(menu,menuIDProfileCCTV,"Режим: видеонаблюдение (4×4)",scanMode.Load()==3)
@@ -217,6 +221,13 @@ func(t *appTray)popupMenu(){
  separator(menu)
  appendMenu(menu,menuIDNumbers,"Показывать номера людей",showNumbers.Load())
  appendMenu(menu,menuIDCapture,"Сохранить проверочный кадр",false)
+ appendMenu(menu,menuIDCaptureCompat,"Захват видео: совместимый режим (CAPTUREBLT)",captureCompat.Load())
+ appendMenu(menu,menuIDVideoProbe,"Проверить видеокадры (2 снимка за 1,4 сек)",false)
+ if probeReady.Load(){
+  status:=fmt.Sprintf("Тест захвата: %d%% изменившихся пикселей",captureProbePercent.Load())
+  caption:=syscall.StringToUTF16Ptr(status)
+  trayAppendMenu.Call(menu,menuString|1,0,uintptr(unsafe.Pointer(caption)))
+ }
  appendMenu(menu,menuIDTest,"Проверить уголки",testOnly.Load())
  separator(menu)
  appendMenu(menu,menuIDExit,"Выход",false)
@@ -246,6 +257,7 @@ func(t *appTray)popupMenu(){
 func(t *appTray)action(id uintptr){
  switch id{
  case menuIDToggle:enabled.Store(!enabled.Load());version.Add(1)
+ case menuIDProfileSingle:scanMode.Store(0);version.Add(1)
  case menuIDProfileEco:scanMode.Store(1);version.Add(1)
  case menuIDProfileBalanced:scanMode.Store(2);version.Add(1)
  case menuIDProfileCCTV:scanMode.Store(3);version.Add(1)
@@ -266,6 +278,8 @@ func(t *appTray)action(id uintptr){
  case menuIDOrange:colour.Store(3);version.Add(1)
  case menuIDNumbers:showNumbers.Store(!showNumbers.Load());version.Add(1)
  case menuIDCapture:captureRequested.Store(true)
+ case menuIDCaptureCompat:captureCompat.Store(!captureCompat.Load());probeReady.Store(false)
+ case menuIDVideoProbe:captureProbeRequested.Store(true);probeReady.Store(false)
  case menuIDTest:testOnly.Store(!testOnly.Load());version.Add(1)
  case menuIDExit:stopped.Store(true);trayPostQuit.Call(0)
  }

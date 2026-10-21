@@ -1,0 +1,66 @@
+name: v1.7 fast verified NCNN reuse (full Win7 x86 and x64)
+on:
+  push:
+    branches: [fix/live-video-capture-v17]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  fast-build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - name: Validate tracking and capture regressions
+        working-directory: src
+        run: go test -v ./...
+      - name: Download previously verified x64/x86 NCNN bundle
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39601812980
+          name: PeopleOverlay_v1.6_Win7_TrayFix_PersonLock
+          github-token: ${{ github.token }}
+          path: BASE
+      - name: Cross-compile current Go app for Windows 7 x64/x86
+        run: |
+          mkdir -p _output/x64 _output/x86
+          cd src
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags ncnn -trimpath -ldflags '-s -w -H windowsgui' -o ../_output/x64/PeopleOverlay_Win7_NCNN_x64.exe .
+          CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -tags ncnn -trimpath -ldflags '-s -w -H windowsgui' -o ../_output/x86/PeopleOverlay_Win7_NCNN_x86.exe .
+      - name: Re-embed verified NCNN model and native DLL into new EXEs
+        run: python3 scripts/repack_verified_ncnn.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v17-fast-unverified
+          path: RELEASE_NCNN/*.exe
+          retention-days: 1
+  windows-test:
+    needs: fast-build
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: v17-fast-unverified
+          path: DIST
+      - name: Load real neural model and infer with both Windows executables
+        shell: pwsh
+        run: |
+          foreach ($arch in @('x64','x86')) {
+            $exe = Join-Path (Resolve-Path ./DIST).Path "PeopleOverlay_Win7_NCNN_$arch.exe"
+            $p=Start-Process -FilePath $exe -ArgumentList '--selftest' -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "NCNN startup failed $arch code $($p.ExitCode)" }
+            Write-Host "Verified real NCNN inference $arch"
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PeopleOverlay_v1.7_CCTV_Capture_Tracking_Fix
+          path: DIST/*.exe
+          retention-days: 30

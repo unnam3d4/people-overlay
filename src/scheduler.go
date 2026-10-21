@@ -103,6 +103,31 @@ func (s *scanScheduler)next(now time.Time,profile int32)int{
  }
  return best
 }
+// Prevent ghosts from lingering across a full 16-camera scan cycle.
+// When somebody has already been seen, revisit that person's camera about
+// every four seconds; this makes disappearance detection responsive without
+// rescanning a quiet camera on every frame. Other tiles remain eligible.
+func(s *scanScheduler)priorityTracked(views []TrackView,regions []scanRegion,now time.Time)int{
+ best,bestAge:=-1,4.0
+ for _,v:=range views{
+  for i:=1;i<len(regions);i++{
+   if i>=len(s.lastScan){break}
+   r:=regions[i]
+   bx1:=math.Max(v.Box.X,float64(r.x))
+   by1:=math.Max(v.Box.Y,float64(r.y))
+   bx2:=math.Min(v.Box.X+v.Box.W,float64(r.x+r.w))
+   by2:=math.Min(v.Box.Y+v.Box.H,float64(r.y+r.h))
+   // Two negative extents may otherwise multiply into a positive area.
+   if bx2<=bx1||by2<=by1{continue}
+   if (bx2-bx1)*(by2-by1)<.82*v.Box.W*v.Box.H{continue}
+   age:=120.0
+   if !s.lastScan[i].IsZero(){age=now.Sub(s.lastScan[i]).Seconds()}
+   if age>bestAge{best,bestAge=i,age}
+  }
+ }
+ return best
+}
+
 func throttleFor(profile int32,busy time.Duration)time.Duration{
  if busy<=0{busy=100*time.Millisecond}
  var factor float64

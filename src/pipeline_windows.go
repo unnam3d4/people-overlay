@@ -87,6 +87,8 @@ func analyze(d *Detector){
  var lastBusy time.Duration=350*time.Millisecond
  lastEnabled:=false
  var lastPaint []TrackView
+ var probeAt time.Time
+ var probeFirst []byte
 
  publish:=func(now time.Time){
   items:=tracker.views(now)
@@ -124,7 +126,7 @@ func analyze(d *Detector){
   w,h:=screenSize()
   if w<64||h<64{time.Sleep(time.Second);continue}
   profile:=scanMode.Load()
-  if profile<1||profile>3{profile=2}
+  if profile<0||profile>3{profile=2}
   if snap.w!=w||snap.h!=h||profile!=sch.previousProfile{
    snap.close()
    var e error
@@ -142,11 +144,32 @@ func analyze(d *Detector){
   }
 
   start:=time.Now()
-  ok,_,_:=pBlt.Call(snap.dc,0,0,uintptr(w),uintptr(h),screen,0,0,srcCopy)
+  captureFlags:=uintptr(srcCopy)
+  if captureCompat.Load(){captureFlags|=0x40000000} // CAPTUREBLT: compositor/layered-window compatibility
+  ok,_,_:=pBlt.Call(snap.dc,0,0,uintptr(w),uintptr(h),screen,0,0,captureFlags)
   if ok==0{logError(fmt.Errorf("BitBlt capture failed"));time.Sleep(time.Second);continue}
   if captureRequested.Swap(false){
    pixels:=append([]byte(nil),snap.pixels...)
    go saveCapture(pixels,w,h)
+  }
+  // Explicit capture diagnostic: two independently sampled actual BitBlt
+  // frames, about 1.4 seconds apart. Photos can work while GPU video layers
+  // return blank/frozen data. These screenshots stay local to the PC.
+  if captureProbeRequested.Swap(false){
+   probeFirst=append(probeFirst[:0],snap.pixels...)
+   probeAt=time.Now()
+   probeReady.Store(false)
+   go saveCapture(append([]byte(nil),probeFirst...),w,h)
+  }
+  if !probeAt.IsZero()&&time.Since(probeAt)>1400*time.Millisecond{
+   delta:=sampleCaptureDifference(probeFirst,snap.pixels,w,h)
+   captureProbePercent.Store(int32(delta))
+   probeReady.Store(true)
+   logError(fmt.Errorf("Capture diagnostic: changed pixels %d%% in 1.4s (0%% with visible video motion suggests inaccessible GPU video layer); compatibility=%v",delta,captureCompat.Load()))
+   pixels:=append([]byte(nil),snap.pixels...)
+   go saveCapture(pixels,w,h)
+   probeAt=time.Time{}
+   probeFirst=nil
   }
   // A simultaneous hard scene cut on most cameras means the user switched
   // RVi layouts. Drop stale tracks and reject any AI result from the old view.
@@ -181,7 +204,7 @@ func analyze(d *Detector){
     tracker.observePeople(corrected,now)
     // A targeted camera crop that no longer contains the person is
     // negative evidence. Two negative neural checks remove ghost corners.
-    if regionIndex(regions,result.zone)!=0 {
+    if regionIndex(regions,result.zone)!=0||len(regions)==1 {
      tracker.noteRegionScan(result.zone,now)
     }
     lastInferenceMS.Store(result.duration.Milliseconds())
@@ -197,7 +220,8 @@ func analyze(d *Detector){
   // The unbuffered request channel is a backpressure mechanism: when AI is
   // busy, send fails instantly instead of accumulating old video frames.
   if !pending&&!now.Before(nextInference){
-   index:=sch.next(now,profile)
+   index:=sch.priorityTracked(tracker.views(now),regions,now)
+   if index<0{index=sch.next(now,profile)}
    region:=regions[index]
    crop:=copyRegionBGRA(snap.pixels,w,h,region)
    if crop!=nil{

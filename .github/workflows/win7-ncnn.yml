@@ -1,8 +1,8 @@
-name: v1.6 Win7 tray popup regression and person-lock QA
+name: v1.7 CCTV nested-box, ghost cleanup and video capture QA
 
 on:
   push:
-    branches: [fix/win7-tray-menu-v16]
+    branches: [fix/live-video-capture-v17]
   workflow_dispatch:
 
 permissions:
@@ -78,6 +78,6 @@ jobs:
       - name: Publish verified portable EXEs
         uses: actions/upload-artifact@v4
         with:
-          name: PeopleOverlay_v1.6_Win7_TrayFix_PersonLock
+          name: PeopleOverlay_v1.7_CCTV_Capture_Tracking_Fix
           path: DIST/*.exe
           retention-days: 30
