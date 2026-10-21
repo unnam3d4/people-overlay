@@ -34,6 +34,8 @@ const (
  menuIDTest=150
  menuIDNumbers=152
  menuIDCapture=153
+ menuIDVideoProbe=154
+ menuIDCaptureCompat=155
  menuIDFastAI=159
  menuIDAlarmToggle=160
  menuIDAlarmShort=161
@@ -217,6 +219,13 @@ func(t *appTray)popupMenu(){
  separator(menu)
  appendMenu(menu,menuIDNumbers,"Показывать номера людей",showNumbers.Load())
  appendMenu(menu,menuIDCapture,"Сохранить проверочный кадр",false)
+ appendMenu(menu,menuIDCaptureCompat,"Захват видео: совместимый режим (CAPTUREBLT)",captureCompat.Load())
+ appendMenu(menu,menuIDVideoProbe,"Проверить видеокадры (2 снимка за 1,4 сек)",false)
+ if probeReady.Load(){
+  status:=fmt.Sprintf("Тест захвата: %d%% изменившихся пикселей",captureProbePercent.Load())
+  caption:=syscall.StringToUTF16Ptr(status)
+  trayAppendMenu.Call(menu,menuString|1,0,uintptr(unsafe.Pointer(caption)))
+ }
  appendMenu(menu,menuIDTest,"Проверить уголки",testOnly.Load())
  separator(menu)
  appendMenu(menu,menuIDExit,"Выход",false)
@@ -266,6 +275,8 @@ func(t *appTray)action(id uintptr){
  case menuIDOrange:colour.Store(3);version.Add(1)
  case menuIDNumbers:showNumbers.Store(!showNumbers.Load());version.Add(1)
  case menuIDCapture:captureRequested.Store(true)
+ case menuIDCaptureCompat:captureCompat.Store(!captureCompat.Load());probeReady.Store(false)
+ case menuIDVideoProbe:captureProbeRequested.Store(true);probeReady.Store(false)
  case menuIDTest:testOnly.Store(!testOnly.Load());version.Add(1)
  case menuIDExit:stopped.Store(true);trayPostQuit.Call(0)
  }
