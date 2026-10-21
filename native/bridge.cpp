@@ -5,9 +5,11 @@
 #include <cstring>
 #include <cstdio>
 #include <memory>
+#include <atomic>
 #include <vector>
 
 static std::unique_ptr<ncnn::Net> g_net;
+static std::atomic<int> g_threads(1);
 static const char* g_input = "in0";
 static const char* g_output = "out0";
 
@@ -48,7 +50,7 @@ extern "C" __declspec(dllexport) int __stdcall PPLInfer(const float* planar, int
        std::memcpy(dest, planar + c*640*640, 640*640*sizeof(float));
     }
     ncnn::Extractor ex = g_net->create_extractor();
-    ex.set_num_threads(1);
+    ex.set_num_threads(g_threads.load());
     if (ex.input(g_input, in) != 0) return -13;
     ncnn::Mat out;
     if (ex.extract(g_output, out) != 0 || out.empty()) return -14;
@@ -72,6 +74,12 @@ extern "C" __declspec(dllexport) int __stdcall PPLInfer(const float* planar, int
        return -16;
     }
     return 0;
+}
+
+extern "C" __declspec(dllexport) void __stdcall PPLSetThreads(int threads) {
+    if (threads < 1) threads = 1;
+    if (threads > 2) threads = 2;
+    g_threads.store(threads);
 }
 
 extern "C" __declspec(dllexport) void __stdcall PPLClose() {
