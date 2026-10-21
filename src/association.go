@@ -271,6 +271,14 @@ func (t *personTracker) assignDetectionsAt(found []Rect, at, capturedAt time.Tim
 		if move > math.Max(5, p.Box.W*.14) {
 			alpha = .76
 		}
+        // The old .76 easing leaves an already 0.5–1.5s stale human
+        // another 6–20 pixels behind each correct new neural box. On real
+        // PETS footage the person traverses whole body widths between
+        // NN callbacks. Trust a high-confidence geometrically matched
+        // re-observation instead of smoothing back toward the old wall.
+        if move > math.Max(12,p.Box.W*.35) && d.Score>=.65 {
+            alpha=1.0
+        }
 		if move < 1.25 {
 			alpha = .24
 		}
