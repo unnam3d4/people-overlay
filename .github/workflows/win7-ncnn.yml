@@ -1,8 +1,8 @@
-name: v1.5 CCTV person-lock and crossing QA
+name: v1.6 Win7 tray popup regression and person-lock QA
 
 on:
   push:
-    branches: [feature/person-lock-v15]
+    branches: [fix/win7-tray-menu-v16]
   workflow_dispatch:
 
 permissions:
@@ -78,6 +78,6 @@ jobs:
       - name: Publish verified portable EXEs
         uses: actions/upload-artifact@v4
         with:
-          name: PeopleOverlay_v1.5_PersonLock_CCTV_Alarm_Win7to11
+          name: PeopleOverlay_v1.6_Win7_TrayFix_PersonLock
           path: DIST/*.exe
           retention-days: 30
