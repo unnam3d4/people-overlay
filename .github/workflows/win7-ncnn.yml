@@ -1,8 +1,8 @@
-name: Build Win7 native NCNN EXEs
+name: Build Fast CCTV People Overlay x86/x64
 
 on:
   push:
-    branches: [fix/win7-ncnn]
+    branches: [feature/fast-cctv-tray]
   workflow_dispatch:
 
 permissions:
@@ -72,6 +72,6 @@ jobs:
       - name: Publish verified portable EXEs
         uses: actions/upload-artifact@v4
         with:
-          name: PeopleOverlay_Win7_NCNN_Standalone
+          name: PeopleOverlay_v0.9_CCTV_Tray_Win7to11
           path: DIST/*.exe
           retention-days: 30
