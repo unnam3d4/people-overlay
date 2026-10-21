@@ -139,13 +139,14 @@ func(s *scanScheduler)nextAdaptive(now time.Time,profile int32,views []TrackView
  if len(s.lastScan)!=len(regs){return 0}
  best,bestScore:=1,math.Inf(-1)
  for i:=1;i<len(regs);i++{
-  age:=7.0 // unscanned camera: visit soon, but don't outrank clear motion
+  age:=2.0 // unscanned camera: scan soon; still prioritize clear motion
   if !s.lastScan[i].IsZero(){age=now.Sub(s.lastScan[i]).Seconds()}
   if age<0{age=0}
   // The oldest camera gets scanned eventually even if a different camera
   // has perpetual movement (e.g. trees, reflections, compression noise).
   score:=math.Min(30,age)*6
-  score+=math.Min(1,s.activity[i])*100
+  score+=math.Min(1,s.activity[i])*180
+  if s.activity[i]>.012{score+=22}
   for _,v:=range views{
    if !scanContainsBox(regs[i],v.Box,.82){continue}
    if age>=2.8{score+=30}
