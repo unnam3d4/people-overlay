@@ -222,7 +222,15 @@ func render(hwnd uintptr){
   pos,z,origin:=point{},dimensions{int32(w),int32(h)},point{}
   ok,_,_:=pUpdate.Call(hwnd,screen,uintptr(unsafe.Pointer(&pos)),uintptr(unsafe.Pointer(&z)),layer.dc,uintptr(unsafe.Pointer(&origin)),0,uintptr(unsafe.Pointer(&mode)),ulwAlpha)
   last=time.Now()
-  if ok==0{logError(fmt.Errorf("UpdateLayeredWindow failed"));time.Sleep(time.Second)}else{time.Sleep(300*time.Millisecond)}
+  if ok==0{logError(fmt.Errorf("UpdateLayeredWindow failed"));time.Sleep(time.Second)}else{
+   // Video mode updates corners at about 7fps while economy mode redraws
+   // much less often. Expensive full-desktop layered updates happen only
+   // when an ID/position or menu setting actually changes.
+   cadence:=240*time.Millisecond
+   if scanMode.Load()==3{cadence=140*time.Millisecond}
+   if scanMode.Load()==1{cadence=350*time.Millisecond}
+   time.Sleep(cadence)
+  }
  }
 }
 func makeOverlay(w,h int)(uintptr,error){
