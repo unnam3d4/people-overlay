@@ -23,6 +23,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Fast Go tests and Windows cross-compilation preflight
+        working-directory: src
+        run: |
+          go test -v ./...
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags ncnn -o /tmp/people-overlay-x64-check.exe .
+          CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -tags ncnn -o /tmp/people-overlay-x86-check.exe .
       - name: Install export dependencies on builder only
         run: |
           python -m pip install --quiet numpy==1.26.4 torch==2.3.1 torchvision==0.18.1 ultralytics==8.3.0 pnnx ncnn
