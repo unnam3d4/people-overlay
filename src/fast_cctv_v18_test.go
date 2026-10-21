@@ -45,8 +45,9 @@ func TestV18NegativeResultFromOldFrameCannotDeleteNewPerson(t *testing.T){
  discovered:=now.Add(2*time.Second)
  tr.observePeople([]Rect{{X:22,Y:20,W:70,H:120,Score:.92}},discovered)
  area:=scanRegion{x:0,y:0,w:200,h:150}
- tr.people[0].LastVisual=now.Add(3500*time.Millisecond)
+ tr.people[0].LastVisual=now.Add(2500*time.Millisecond)
  tr.noteRegionScanCaptured(area,now.Add(3*time.Second),now,1)
+ tr.people[0].LastVisual=now.Add(3500*time.Millisecond)
  tr.noteRegionScanCaptured(area,now.Add(4*time.Second),now,1)
  if got:=tr.views(now.Add(4*time.Second));len(got)!=1{
   t.Fatalf("stale empty inference killed newly visible person: %+v",got)
@@ -57,8 +58,8 @@ func TestV18NoIntercameraIDTeleportOrMerge(t *testing.T){
  var tr personTracker
  now:=time.Unix(52000,0)
  tr.layout(800,600,4)
- left:=Rect{X:174,Y:60,W:50,H:120,Score:.93}
- right:=Rect{X:176,Y:60,W:50,H:120,Score:.95}
+ left:=Rect{X:143,Y:60,W:50,H:120,Score:.93}
+ right:=Rect{X:206,Y:60,W:50,H:120,Score:.95}
  if tr.tileOf(left)==tr.tileOf(right){t.Fatal("test fixture did not straddle CCTV tile boundary")}
  tr.observePeople([]Rect{left,right},now)
  old:=tr.views(now)
