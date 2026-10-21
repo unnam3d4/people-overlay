@@ -33,6 +33,10 @@ func inferenceWorker(detector *Detector,requests <-chan inferenceRequest,replies
    continue
   case req,ok:=<-requests:
    if !ok{return}
+   // Switch only on the AI worker, never while an inference is in flight.
+   if control,ok:=interface{}(detector).(interface{SetThreads(int)});ok{
+    threads:=1;if fastAI.Load(){threads=2};control.SetThreads(threads)
+   }
    begun:=time.Now()
    output,n,err:=detector.Predict(req.input)
    var found []Rect
