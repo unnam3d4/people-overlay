@@ -461,7 +461,13 @@ func (t *personTracker) step(pixels []byte, w, h int, now time.Time) {
         // matcher explicitly rejects ambiguous distant patches: background
         // motion alone must never renew LastVisual.
         if !good && p.AnchorValid {
-            if x,y,ok:=capturedAnchorTranslation(p.Anchor,gray,gw,gh,p.Box,scanRegion{0,0,w,h});ok {
+            // Retry the compact local search first. This handles slow
+            // 2-6px movement when the block matcher rejects nearly equal
+            // correlations, without treating motion in the background as a
+            // new anchor. The wider search is only a last resort.
+            if x,y,ok:=anchorFineMotion(p.Anchor,gray,gw,gh,p.Box);ok {
+                dx,dy,good=x,y,true
+            } else if x,y,ok:=capturedAnchorTranslation(p.Anchor,gray,gw,gh,p.Box,scanRegion{0,0,w,h});ok {
                 dx,dy,good=x,y,true
             }
         }
