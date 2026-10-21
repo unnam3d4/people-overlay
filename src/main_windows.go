@@ -244,7 +244,7 @@ func makeOverlay(w,h int)(uintptr,error){
  return wnd,nil
 }
 func registerHotkeys()error{
- for _,p:=range [][2]uintptr{{1,0x78},{2,0x79},{3,'1'},{4,'2'},{5,'3'},{6,0x75}}{
+ for _,p:=range [][2]uintptr{{1,0x78},{2,0x79},{3,'1'},{4,'2'},{5,'3'},{6,0x75},{7,0x77}}{
   ok,_,e:=pRegister.Call(0,p[0],modCtrlAlt,p[1])
   if ok==0{return fmt.Errorf("cannot register hotkey %d: %v",p[0],e)}
  }
@@ -275,7 +275,7 @@ func main(){
  if e!=nil{logError(e);alert("People Overlay AI",e.Error());return}
  enabled.Store(true);colour.Store(1);scanMode.Store(3);sensitivity.Store(3)
  if e=registerHotkeys();e!=nil{alert("People Overlay AI",e.Error());return}
- defer func(){for i:=1;i<=6;i++{pUnregister.Call(0,uintptr(i))}}()
+ defer func(){for i:=1;i<=7;i++{pUnregister.Call(0,uintptr(i))}}()
  tray,e:=newTray(hwnd)
  if e!=nil{logError(e);alert("People Overlay AI","Не удалось создать значок трея: "+e.Error());return}
  defer tray.close()
@@ -307,6 +307,7 @@ func main(){
    case 4:colour.Store(2)
    case 5:colour.Store(3)
    case 6:testOnly.Store(!testOnly.Load());version.Add(1)
+   case 7:tray.popupMenu()
    }
   }else{pTranslate.Call(uintptr(unsafe.Pointer(&m)));pDispatch.Call(uintptr(unsafe.Pointer(&m)))}
  }
