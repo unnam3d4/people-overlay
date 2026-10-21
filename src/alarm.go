@@ -4,7 +4,7 @@ import "time"
 
 // Don't be noisy: one alert for a NEW independently confirmed person, not for
 // every AI result, every movement, or a track whose ID was just renewed.
-type alarmCandidate struct{seen time.Time; last time.Time}
+type alarmCandidate struct{seen time.Time; last time.Time; handled bool}
 type alarmGate struct{
  candidates map[int]alarmCandidate
  lastGlobal time.Time
@@ -25,7 +25,11 @@ func (g *alarmGate)tick(t *personTracker,now time.Time,enabled bool,globalPause 
   // 700 ms of persistence and either two consistent visual frames or one
   // high-confidence detection. This filters flickering false positives.
   verified:=p.LastVisual.After(c.seen.Add(250*time.Millisecond))||p.Box.Score>=.79
-  if !verified||now.Sub(c.seen)<700*time.Millisecond{continue}
+  if !verified||now.Sub(c.seen)<700*time.Millisecond||c.handled{continue}
+  // Mark this ID processed even if currently muted/cooling down.
+  // Otherwise standing still causes a new alarm every 30-90 seconds.
+  c.handled=true
+  g.candidates[p.ID]=c
   if !enabled{continue}
   if !g.lastGlobal.IsZero()&&now.Sub(g.lastGlobal)<globalPause{continue}
   zone:=t.tileOf(p.Box)
