@@ -65,5 +65,5 @@ func TestImageTrackerFollowsMovingSilhouette(t *testing.T){
  tr.step(two,w,h,start.Add(130*time.Millisecond))
  out:=tr.views(start.Add(130*time.Millisecond))
  if len(out)!=1{t.Fatalf("person disappeared %+v",out)}
- if math.Abs(out[0].Box.X-38)>8||math.Abs(out[0].Box.Y-21)>8{t.Fatalf("tracking failed to follow: %+v",out)}
+ if out[0].Box.X<34||out[0].Box.Y<19||math.Abs(out[0].Box.X-38)>5||math.Abs(out[0].Box.Y-21)>4{t.Fatalf("tracking failed to follow: %+v",out)}
 }
