@@ -3,6 +3,23 @@
 The candidate is under validation. This report is updated with measured final
 results before delivery; a green self-test alone is not a field-accuracy claim.
 
+## Detection target and real-video acceptance
+
+The application detects **whole humans (COCO class person = 0)**, not faces.
+The green corner markers enclose the predicted **body box**. A person's
+face need not be visible: back-facing and occluded-face people are in scope.
+
+Optional real GitHub/CVAT footage currently has only manually labelled
+**face landmarks**, not full-person bounding boxes. Face-point containment
+is an auxiliary diagnostic ONLY. It does NOT validate person-body precision,
+recall, IoU, stable body identity or ghost TTL. That job is non-gating.
+
+Real-person acceptance must use frame-indexed **whole-person boxes and
+tracking IDs**, such as MOT17 train/val pedestrian ground truth (respect its
+CC BY-NC-SA 3.0 terms), and compare baseline/candidate on identical clips.
+That real-body-bbox validation is not yet completed; no body metrics are
+claimed from the head-landmark replay. The photographic-synthetic bbox
+regression gate remains mandatory.
 ## Protocol
 
 Baseline application: `e0929f20ef4376a32983b472b5087a68ab541e32`. Baseline and
