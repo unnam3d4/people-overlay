@@ -235,13 +235,10 @@ func (t *personTracker)step(pixels []byte,w,h int,now time.Time) {
   next:=p.Box
   next.X=math.Max(0,math.Min(float64(w)-next.W,next.X+dx))
   next.Y=math.Max(0,math.Min(float64(h)-next.H,next.Y+dy))
-  // Two adjacent video tiles show different camera feeds. An optical
-  // template must never carry a tracked person into a different camera.
-  if p.Tile>0&&t.tileOf(next)!=p.Tile{
-   p.VelocityX,p.VelocityY=0,0
-   continue
-  }
-  if dx!=0||dy!=0{p.Box=next}
+  // Only allow movement that matches actual pixels. An approximate
+  // 4x4 screen grid is not an authoritative camera boundary: RVi toolbar
+  // and window borders can shift the real video tiles.
+  if dx!=0||dy!=0{p.Box=next;p.Tile=t.tileOf(next)}
   if good&&p.AnchorValid&&dx!=0||good&&p.AnchorValid&&dy!=0{
    if sampled,ok:=sampleAnchor(gray,gw,gh,p.Box);ok&&anchorStillPresent(p.Anchor,sampled){
     // Update clothing template only after a verified movement, never
@@ -287,10 +284,7 @@ func (t *personTracker)observePeople(detections []Rect,at time.Time){
   if d.W<6||d.H<9{continue}
   duplicate:=false
   for i,u:=range unique{
-   // Distinct cameras can show nearly identical adjacent silhouettes.
-   // A single neural crop must never coalesce people across feeds.
-   if t.columns>1&&t.tileOf(d)!=t.tileOf(u){continue}
-   if !sameROISubject(d,u){continue}
+    if !sameROISubject(d,u){continue}
    // Prefer the full human over torso/head proposals. Different crops
    // can make the partial detection appear more confident than the body.
    if nestedROISubject(d,u)&&d.W*d.H>u.W*u.H&&d.Score>=u.Score*.58{
