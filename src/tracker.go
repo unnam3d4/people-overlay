@@ -287,6 +287,9 @@ func (t *personTracker)observePeople(detections []Rect,at time.Time){
   if d.W<6||d.H<9{continue}
   duplicate:=false
   for i,u:=range unique{
+   // Distinct cameras can show nearly identical adjacent silhouettes.
+   // A single neural crop must never coalesce people across feeds.
+   if t.columns>1&&t.tileOf(d)!=t.tileOf(u){continue}
    if !sameROISubject(d,u){continue}
    // Prefer the full human over torso/head proposals. Different crops
    // can make the partial detection appear more confident than the body.
