@@ -219,17 +219,32 @@ func (s *scanScheduler) nextAdaptive(now time.Time, profile int32, views []Track
 		if s.activity[i] > .012 {
 			score += 22
 		}
+		// Once a person has been seen, keep that tile in a bounded neural
+		// revalidation loop. The former +30 bonus after 2.8 seconds let a
+		// queue of quiet never-visited cameras monopolize the only AI worker,
+		// dropping actively moving people for 5+ seconds in the v20 replay.
+		if !s.recentlyFound[i].IsZero() && now.Sub(s.recentlyFound[i]) < 7*time.Second && age >= 1 {
+			score += 20
+		}
 		for _, v := range views {
 			if !scanContainsBox(regs[i], v.Box, .82) {
 				continue
 			}
-			if age >= 2.8 {
-				score += 30
+			if age >= 1 {
+				score += 75
+			}
+			if age >= 2.5 {
+				score += 20
 			}
 			break
 		}
 		if s.lastScan[i].IsZero() {
 			score += 8
+		}
+		// Introduce quiet cameras smoothly as they age instead of a sudden
+		// all-quiet scan burst. Long-overdue cameras still outrank active feeds.
+		if age > 5 {
+			score += math.Min(8, age-5) * 13
 		}
 		if age > 13 {
 			score += 200
