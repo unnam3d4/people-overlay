@@ -447,19 +447,6 @@ func (t *personTracker) step(pixels []byte, w, h int, now time.Time) {
 			p.Anchor, p.AnchorValid = sampleAnchor(t.prevGray, gw, gh, p.Box)
 		}
 		dx, dy, good := motionShift(t.prevGray, gray, gw, gh, p.Box)
-        // If the center-template matcher freezes or loses a filmed person,
-        // use consensus sparse *person-region* patch flow. This estimates
-        // motion from several independent textured parts of the body,
-        // never from one ambiguous background patch. Unlike continuous
-        // Lucas-Kanade, this is bounded local SAD matching in pure Go.
-        flowVerified:=false
-        if p.AnchorValid && (!good || (dx==0 && dy==0)) {
-            if fx,fy,ok:=sparsePersonFlow(t.prevGray,gray,gw,gh,p.Box);ok &&
-              (fx!=0||fy!=0) {
-                dx,dy,good=fx,fy,true
-                flowVerified=true
-            }
-        }
         // An apparently stationary block is not necessarily a stationary
         // person: resolve sub-block movement using AI-verified texture.
         if p.AnchorValid && good && dx==0 && dy==0 {
@@ -491,14 +478,7 @@ func (t *personTracker) step(pixels []byte, w, h int, now time.Time) {
 			candidate.X += dx
 			candidate.Y += dy
 			nowPatch, ok := sampleAnchor(gray, gw, gh, candidate)
-            anchored:=p.AnchorValid && ok && anchorStillPresent(p.Anchor,nowPatch)
-            // Sparse flow from multiple body points can temporarily bridge
-            // clothing/lighting changes during a slow neural revisit. The
-            // exception is strictly age-bounded; it cannot make a moving
-            // wall count as a person for an entire 16-camera sweep.
-            recentAI:=!p.LastAI.IsZero() && !now.Before(p.LastAI) &&
-                now.Sub(p.LastAI)<=1800*time.Millisecond
-			if !anchored && !(flowVerified && recentAI) {
+			if !p.AnchorValid || !ok || !anchorStillPresent(p.Anchor, nowPatch) {
 				good = false
 			}
 		}
