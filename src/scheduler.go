@@ -23,7 +23,10 @@ func (s *scanScheduler)reset(regions int,w,h int,profile int32){
  s.activity=make([]float64,regions)
  s.recentlyFound=make([]time.Time,regions)
  s.previousProfile=profile;s.width=w;s.height=h
+ // On CCTV mosaic a full-screen AI pass makes people tiny and wastes
+ // several seconds on older processors. Start directly with camera crops.
  s.lastFull=time.Time{}
+ if profile==3{s.lastFull=time.Now()}
 }
 
 // Each tile uses 16x12 grayscale samples. Even 4x4 tiled search needs
@@ -76,9 +79,9 @@ func (s *scanScheduler)markScanned(index int,now time.Time,detected bool){
 }
 func (s *scanScheduler)next(now time.Time,profile int32)int{
  if len(s.lastScan)<2{return 0}
- fullInterval:=12*time.Second
- if profile==1{fullInterval=5*time.Second}
- if profile==2{fullInterval=9*time.Second}
+ fullInterval:=55*time.Second
+ if profile==1{fullInterval=16*time.Second}
+ if profile==2{fullInterval=32*time.Second}
  if s.lastFull.IsZero()||now.Sub(s.lastFull)>=fullInterval{return 0}
 
  best,bestScore:=1,-1.0
@@ -88,8 +91,8 @@ func (s *scanScheduler)next(now time.Time,profile int32)int{
   if age<0{age=0}
   // Age grows unbounded until this tile is checked, ensuring non-moving
   // persons are still inspected even with constant motion elsewhere.
-  score:=math.Min(age,120)*2.0+s.activity[i]*115
-  if !s.recentlyFound[i].IsZero()&&now.Sub(s.recentlyFound[i])<4*time.Second{score+=10}
+  score:=math.Min(age,120)*3.0+s.activity[i]*34
+  if !s.recentlyFound[i].IsZero()&&now.Sub(s.recentlyFound[i])<12*time.Second{score+=15}
   if score>bestScore{bestScore,best=score,i}
  }
  return best
