@@ -29,10 +29,10 @@ func (s *scanScheduler)reset(regions int,w,h int,profile int32){
  if profile==3{s.lastFull=time.Now()}
 }
 
-// Each tile uses 16x12 grayscale samples. Even 4x4 tiled search needs
-// fewer than 3,100 pixel reads per screenshot, not another AI model.
+// A 32x24 signature covers small CCTV figures that disappear entirely in
+// 16x12 sampling, while still requiring very little CPU.
 func tinySignature(src []byte,w,h int,r scanRegion)[]uint8{
- const cols,rows=16,12
+ const cols,rows=32,24
  sig:=make([]uint8,cols*rows)
  if len(src)<w*h*4||w<=0||h<=0||r.w<1||r.h<1{return sig}
  for y:=0;y<rows;y++{
@@ -56,7 +56,7 @@ func movementScore(before,after []uint8)float64{
  }
  fraction:=float64(changed)/float64(len(after))
  // Small moving silhouettes may occupy only a few samples.
- if fraction<.008{return 0}
+ if fraction<.003{return 0}
  return math.Min(1,fraction)
 }
 func (s *scanScheduler)observe(frame []byte,w,h int,regions []scanRegion)bool{
@@ -128,13 +128,53 @@ func(s *scanScheduler)priorityTracked(views []TrackView,regions []scanRegion,now
  return best
 }
 
+// A 16-camera mosaic cannot send sixteen 640x640 neural inferences at
+// once on one CPU worker. Allocate scarce inference slots to movement,
+// then to overdue known humans, without starving unchanged cameras.
+// Unlike priorityTracked, this includes every camera in a single fair
+// decision; an old ghost cannot permanently monopolize the detector.
+func(s *scanScheduler)nextAdaptive(now time.Time,profile int32,views []TrackView,regs []scanRegion)int{
+ if len(regs)<2{return 0}
+ if profile!=3{return s.next(now,profile)}
+ if len(s.lastScan)!=len(regs){return 0}
+ best,bestScore:=1,math.Inf(-1)
+ for i:=1;i<len(regs);i++{
+  age:=2.0 // unscanned camera: scan soon; still prioritize clear motion
+  if !s.lastScan[i].IsZero(){age=now.Sub(s.lastScan[i]).Seconds()}
+  if age<0{age=0}
+  // The oldest camera gets scanned eventually even if a different camera
+  // has perpetual movement (e.g. trees, reflections, compression noise).
+  score:=math.Min(30,age)*6
+  score+=math.Min(1,s.activity[i])*180
+  if s.activity[i]>.012{score+=22}
+  for _,v:=range views{
+   if !scanContainsBox(regs[i],v.Box,.82){continue}
+   if age>=2.8{score+=30}
+   break
+  }
+  if s.lastScan[i].IsZero(){score+=8}
+  if age>13{score+=200}
+  if score>bestScore{best,bestScore=i,score}
+ }
+ return best
+}
+func scanContainsBox(r scanRegion,b Rect,threshold float64)bool{
+ if b.W<=0||b.H<=0{return false}
+ x1:=math.Max(b.X,float64(r.x))
+ y1:=math.Max(b.Y,float64(r.y))
+ x2:=math.Min(b.X+b.W,float64(r.x+r.w))
+ y2:=math.Min(b.Y+b.H,float64(r.y+r.h))
+ if x2<=x1||y2<=y1{return false}
+ return (x2-x1)*(y2-y1)>=threshold*b.W*b.H
+}
+
 func throttleFor(profile int32,busy time.Duration)time.Duration{
  if busy<=0{busy=100*time.Millisecond}
  var factor float64
  var minimum,maximum time.Duration
  switch profile{
  case 1:factor,minimum,maximum=1.7,240*time.Millisecond,3*time.Second
- case 3:factor,minimum,maximum=.16,60*time.Millisecond,850*time.Millisecond
+ case 3:factor,minimum,maximum=.07,50*time.Millisecond,400*time.Millisecond
  default:factor,minimum,maximum=.55,140*time.Millisecond,1500*time.Millisecond
  }
  delay:=time.Duration(float64(busy)*factor)
@@ -152,6 +192,6 @@ func recheckTTL(regions int,profile int32,busy time.Duration)time.Duration{
  cycle:=time.Duration(regions)*(busy+throttleFor(profile,busy))
  ttl:=cycle+cycle/3
  if ttl<9*time.Second{ttl=9*time.Second}
- if ttl>45*time.Second{ttl=45*time.Second}
+ if ttl>16*time.Second{ttl=16*time.Second}
  return ttl
 }
