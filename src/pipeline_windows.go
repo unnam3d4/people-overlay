@@ -14,6 +14,7 @@ type inferenceRequest struct {
  zone scanRegion
  epoch uint64
  captured []TrackView
+ capturedAt time.Time
 }
 
 type inferenceReply struct {
@@ -21,6 +22,7 @@ type inferenceReply struct {
  zone scanRegion
  epoch uint64
  captured []TrackView
+ capturedAt time.Time
  duration time.Duration
  err error
 }
@@ -56,7 +58,7 @@ func inferenceWorker(detector *Detector,requests <-chan inferenceRequest,replies
      found[i].Y+=float64(req.zone.y)
     }
    }
-   result:=inferenceReply{detected:found,zone:req.zone,epoch:req.epoch,captured:req.captured,duration:time.Since(begun),err:err}
+   result:=inferenceReply{detected:found,zone:req.zone,epoch:req.epoch,captured:req.captured,capturedAt:req.capturedAt,duration:time.Since(begun),err:err}
    // One result slot suffices because requests are unbuffered and producer
    // deliberately never queues stale camera images.
    select{case replies<-result:case <-time.After(500*time.Millisecond):}
@@ -199,13 +201,16 @@ func analyze(d *Detector){
      version.Add(1)
      break
     }
-    sch.markScanned(regionIndex(regions,result.zone),now,len(result.detected)>0)
+    scannedIndex:=regionIndex(regions,result.zone)
+    sch.markScanned(scannedIndex,now,len(result.detected)>0)
     corrected:=compensateLateDetections(result.detected,result.captured,tracker.views(now))
     tracker.observePeople(corrected,now)
     // A targeted camera crop that no longer contains the person is
     // negative evidence. Two negative neural checks remove ghost corners.
-    if regionIndex(regions,result.zone)!=0||len(regions)==1 {
-     tracker.noteRegionScan(result.zone,now)
+    if scannedIndex!=0||len(regions)==1 {
+     tileID:=0
+     if profile==3{tileID=scannedIndex}
+     tracker.noteRegionScanCaptured(result.zone,now,result.capturedAt,tileID)
     }
     lastInferenceMS.Store(result.duration.Milliseconds())
     lastBusy=result.duration
@@ -220,8 +225,10 @@ func analyze(d *Detector){
   // The unbuffered request channel is a backpressure mechanism: when AI is
   // busy, send fails instantly instead of accumulating old video frames.
   if !pending&&!now.Before(nextInference){
-   index:=sch.priorityTracked(tracker.views(now),regions,now)
-   if index<0{index=sch.next(now,profile)}
+   // Prioritize fresh movement while guaranteeing background coverage.
+   // The old tracked-only priority could indefinitely starve other feeds
+   // when even one stale/false rectangle stayed in a camera.
+   index:=sch.nextAdaptive(now,profile,tracker.views(now),regions)
    region:=regions[index]
    crop:=copyRegionBGRA(snap.pixels,w,h,region)
    if crop!=nil{
@@ -229,7 +236,7 @@ func analyze(d *Detector){
     // At most one raw crop is queued; inference never builds up a backlog.
     // The source DIB may change during inference, so copy only selected ROI.
     select{
-    case req<-inferenceRequest{pixels:crop,contrast:contrastMode.Load(),zone:region,epoch:epoch,captured:captured}:
+    case req<-inferenceRequest{pixels:crop,contrast:contrastMode.Load(),zone:region,epoch:epoch,captured:captured,capturedAt:now}:
      pending=true
      sch.markScanned(index,now,false)
      nextInference=now.Add(throttleFor(profile,lastBusy))
