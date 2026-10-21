@@ -66,6 +66,7 @@ func analyze(d *Detector){
 
  var sch scanScheduler
  var tracker personTracker
+ var alarm alarmGate
  var regions []scanRegion
  var epoch uint64
  var pending bool
@@ -180,7 +181,13 @@ func analyze(d *Detector){
     }
    }
   }
-  publish(time.Now())
+  now=time.Now()
+  // The alarm gate sees the same unique people as the overlay. It requires
+  // persistence and visual validation; it never fires on every AI frame.
+  if alarm.tick(&tracker,now,alarmEnabled.Load(),time.Duration(alarmPauseSecs.Load())*time.Second){
+   playAviationAlert(alarmFull.Load())
+  }
+  publish(now)
   // This lightweight loop moves markers even during a multi-second CPU AI
   // call. Eco and balanced protect older machines from excessive capture.
   cadence:=300*time.Millisecond
