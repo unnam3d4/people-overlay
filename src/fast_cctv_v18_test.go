@@ -32,7 +32,7 @@ func TestV18ExistingHumanWinsRecheck(t *testing.T){
  now:=time.Unix(50500,0)
  for i:=1;i<len(regs);i++{sched.markScanned(i,now.Add(-time.Second),false)}
  sched.markScanned(5,now.Add(-4*time.Second),true)
- existing:=[]TrackView{{Box:Rect{X:430,Y:40,W:65,H:150},ID:10}}
+ existing:=[]TrackView{{Box:Rect{X:30,Y:240,W:65,H:150},ID:10}}
  if got:=sched.nextAdaptive(now,3,existing,regs);got!=5{
   t.Fatalf("a known human was not rechecked, got %d",got)
  }
@@ -45,6 +45,7 @@ func TestV18NegativeResultFromOldFrameCannotDeleteNewPerson(t *testing.T){
  discovered:=now.Add(2*time.Second)
  tr.observePeople([]Rect{{X:22,Y:20,W:70,H:120,Score:.92}},discovered)
  area:=scanRegion{x:0,y:0,w:200,h:150}
+ tr.people[0].LastVisual=now.Add(3500*time.Millisecond)
  tr.noteRegionScanCaptured(area,now.Add(3*time.Second),now,1)
  tr.noteRegionScanCaptured(area,now.Add(4*time.Second),now,1)
  if got:=tr.views(now.Add(4*time.Second));len(got)!=1{
