@@ -1,8 +1,8 @@
-name: v1.2 CCTV tracker stabilization QA
+name: v1.3 CCTV sound and smooth tracking QA
 
 on:
   push:
-    branches: [fix/cctv-tracks-v12]
+    branches: [feature/cctv-alarm-v13]
   workflow_dispatch:
 
 permissions:
@@ -78,6 +78,6 @@ jobs:
       - name: Publish verified portable EXEs
         uses: actions/upload-artifact@v4
         with:
-          name: PeopleOverlay_v1.2_CCTV_Tracking_Fix
+          name: PeopleOverlay_v1.3_Alarm_CCTV_Win7to11
           path: DIST/*.exe
           retention-days: 30
