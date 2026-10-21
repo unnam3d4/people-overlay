@@ -109,6 +109,9 @@ var sensitivity atomic.Int32
 var contrastMode atomic.Bool
 var captureRequested atomic.Bool
 var showNumbers atomic.Bool
+var alarmEnabled atomic.Bool
+var alarmFull atomic.Bool
+var alarmPauseSecs atomic.Int32
 var lastInferenceMS atomic.Int64
 var trackedCount atomic.Int32
 var testOnly atomic.Bool
@@ -250,7 +253,7 @@ func makeOverlay(w,h int)(uintptr,error){
  return wnd,nil
 }
 func registerHotkeys()error{
- for _,p:=range [][2]uintptr{{1,0x78},{2,0x79},{3,'1'},{4,'2'},{5,'3'},{6,0x75},{7,0x77}}{
+ for _,p:=range [][2]uintptr{{1,0x78},{2,0x79},{3,'1'},{4,'2'},{5,'3'},{6,0x75},{7,0x77},{8,0x76}}{
   ok,_,e:=pRegister.Call(0,p[0],modCtrlAlt,p[1])
   if ok==0{return fmt.Errorf("cannot register hotkey %d: %v",p[0],e)}
  }
@@ -304,11 +307,13 @@ func main(){
  hwnd,e:=makeOverlay(w,h)
  if e!=nil{logError(e);alert("People Overlay AI",e.Error());return}
  enabled.Store(true);colour.Store(1);scanMode.Store(3);sensitivity.Store(3)
+ alarmEnabled.Store(true);alarmPauseSecs.Store(30)
  if e=registerHotkeys();e!=nil{alert("People Overlay AI",e.Error());return}
- defer func(){for i:=1;i<=7;i++{pUnregister.Call(0,uintptr(i))}}()
+ defer func(){for i:=1;i<=8;i++{pUnregister.Call(0,uintptr(i))}}()
  tray,e:=newTray(hwnd)
  if e!=nil{logError(e);alert("People Overlay AI","Не удалось создать значок трея: "+e.Error());return}
  defer tray.close()
+ defer stopAviationAlert()
  var workers sync.WaitGroup
  workers.Add(2)
  go func(){defer workers.Done();render(hwnd)}()
@@ -338,6 +343,7 @@ func main(){
    case 5:colour.Store(3)
    case 6:testOnly.Store(!testOnly.Load());version.Add(1)
    case 7:tray.popupMenu()
+   case 8:alarmEnabled.Store(!alarmEnabled.Load())
    }
   }else{pTranslate.Call(uintptr(unsafe.Pointer(&m)));pDispatch.Call(uintptr(unsafe.Pointer(&m)))}
  }
