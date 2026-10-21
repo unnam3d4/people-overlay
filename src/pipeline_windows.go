@@ -126,7 +126,7 @@ func analyze(d *Detector){
   w,h:=screenSize()
   if w<64||h<64{time.Sleep(time.Second);continue}
   profile:=scanMode.Load()
-  if profile<1||profile>3{profile=2}
+  if profile<0||profile>3{profile=2}
   if snap.w!=w||snap.h!=h||profile!=sch.previousProfile{
    snap.close()
    var e error
@@ -204,7 +204,7 @@ func analyze(d *Detector){
     tracker.observePeople(corrected,now)
     // A targeted camera crop that no longer contains the person is
     // negative evidence. Two negative neural checks remove ghost corners.
-    if regionIndex(regions,result.zone)!=0 {
+    if regionIndex(regions,result.zone)!=0||len(regions)==1 {
      tracker.noteRegionScan(result.zone,now)
     }
     lastInferenceMS.Store(result.duration.Milliseconds())
