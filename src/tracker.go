@@ -193,8 +193,19 @@ func motionShift(previous, current []byte, w, h int, box Rect) (float64, float64
 	best, bestDX, bestDY := 1e9, 0, 0
 	same := 1e9
 	second := 1e9
-	for dy := -5; dy <= 5; dy++ {
-		for dx := -5; dx <= 5; dx++ {
+	// A person moving 14 pixels between 7 FPS CCTV source frames
+    // needs a ±8 quarter-resolution-pixel search. Bound candidate indexing
+    // explicitly so the wider search remains safe near camera edges.
+	for dy := -8; dy <= 8; dy++ {
+		for dx := -8; dx <= 8; dx++ {
+            inside := true
+            for n := 0; n < 63; n++ {
+                if xs[n]+dx < 0 || xs[n]+dx >= w || ys[n]+dy < 0 || ys[n]+dy >= h {
+                    inside = false
+                    break
+                }
+            }
+            if !inside { continue }
 			diff := 0
 			for i := 0; i < 63; i++ {
 				a, b := int(values[i]), int(current[(ys[i]+dy)*w+xs[i]+dx])
