@@ -395,6 +395,17 @@ func (t *personTracker) step(pixels []byte, w, h int, now time.Time) {
 			p.Anchor, p.AnchorValid = sampleAnchor(t.prevGray, gw, gh, p.Box)
 		}
 		dx, dy, good := motionShift(t.prevGray, gray, gw, gh, p.Box)
+        // Sparse 18-24px CCTV silhouettes can be too narrow for the 63-point
+        // consecutive-frame matcher, especially after an odd-pixel move or
+        // repeated video frame. On failure, reacquire only the *originally
+        // AI-confirmed* texture within a bounded local displacement. The
+        // matcher explicitly rejects ambiguous distant patches: background
+        // motion alone must never renew LastVisual.
+        if !good && p.AnchorValid {
+            if x,y,ok:=capturedAnchorTranslation(p.Anchor,gray,gw,gh,p.Box,scanRegion{0,0,w,h});ok {
+                dx,dy,good=x,y,true
+            }
+        }
 		// A stable background often returns a perfect zero-motion match. It is
 		// not evidence of the *person* unless the AI-anchored texture is present.
 		if good && (p.AnchorValid || p.AnchorCaptured) {
