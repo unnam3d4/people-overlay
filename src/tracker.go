@@ -805,7 +805,10 @@ func (t *personTracker) tentativeViews(now time.Time) []TrackView {
 		return views
 	}
 	for _, p := range t.people {
-		if p.State == trackTentative {
+		// Hidden weak candidates require their second independent AI
+        // observation. Briefly lost confirmed people deserve the same
+        // urgent crop before expiring and coming back as duplicate IDs.
+		if p.State == trackTentative || p.State == trackLost {
 			views = append(views, TrackView{Box: p.Box, ID: p.ID})
 		}
 	}
