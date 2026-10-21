@@ -15,6 +15,8 @@ type personTrack struct {
  LastAI time.Time
  LastVisual time.Time
  LastMotion time.Time
+ LastStep time.Time
+ VelocityX,VelocityY float64
  Tile int
 }
 
@@ -134,20 +136,37 @@ func (t *personTracker)step(pixels []byte,w,h int,now time.Time) {
  for i:=range t.people {
   p:=&t.people[i]
   dx,dy,good:=motionShift(t.prevGray,gray,gw,gh,p.Box)
-  if !good{continue}
+  dt:=now.Sub(p.LastStep).Seconds()
+  if dt<=0||dt>.4{dt=.115}
+  p.LastStep=now
+  if !good {
+   // Bridge at most 0.35s of weak or occluded video using recent velocity.
+   // Never renew LastVisual here: lost tracks still expire promptly.
+   if !p.LastMotion.IsZero()&&now.Sub(p.LastMotion)<350*time.Millisecond&&
+     now.Sub(p.LastVisual)<350*time.Millisecond{
+    dx=math.Max(-8,math.Min(8,p.VelocityX*dt*.5))
+    dy=math.Max(-8,math.Min(8,p.VelocityY*dt*.5))
+    p.VelocityX*=.78;p.VelocityY*=.78
+   }else{p.VelocityX=0;p.VelocityY=0;continue}
+  }else{
+   p.LastVisual=now
+   if dx!=0||dy!=0{
+    velX:=math.Max(-160,math.Min(160,dx/dt))
+    velY:=math.Max(-160,math.Min(160,dy/dt))
+    p.VelocityX=.46*p.VelocityX+.54*velX
+    p.VelocityY=.46*p.VelocityY+.54*velY
+    p.LastMotion=now
+   }else{p.VelocityX*=.5;p.VelocityY*=.5}
+  }
   next:=p.Box
   next.X=math.Max(0,math.Min(float64(w)-next.W,next.X+dx))
   next.Y=math.Max(0,math.Min(float64(h)-next.H,next.Y+dy))
-  // A screen-split border is not necessarily a camera border (RVi has
-  // headers/sidebars). Trust the validated local image match instead.
+  // ROI boundaries may not align with the actual RVi video grid.
   p.Tile=t.tileOf(next)
-  p.LastVisual=now
-  if dx!=0||dy!=0 {
-   p.Box=next
-   p.LastMotion=now
-  }
+  if dx!=0||dy!=0{p.Box=next}
  }
  t.prevGray=gray
+ t.coalesce() // frame-to-frame duplicates must not reach the renderer
  t.prune(now)
 }
 
@@ -241,7 +260,8 @@ func (t *personTracker)coalesce(){
    if !samePersonGeometry(a.Box,b.Box){j++;continue}
    if b.LastAI.After(a.LastAI){a.Box=b.Box;a.LastAI=b.LastAI}
    if b.LastVisual.After(a.LastVisual){a.LastVisual=b.LastVisual}
-   if b.LastMotion.After(a.LastMotion){a.LastMotion=b.LastMotion}
+   if b.LastMotion.After(a.LastMotion){a.LastMotion=b.LastMotion;a.VelocityX=b.VelocityX;a.VelocityY=b.VelocityY}
+   if b.LastStep.After(a.LastStep){a.LastStep=b.LastStep}
    if b.ID<a.ID{a.ID=b.ID}
    t.people[i]=a
    t.people=append(t.people[:j],t.people[j+1:]...)
