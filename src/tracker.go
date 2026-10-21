@@ -133,7 +133,7 @@ func stationaryAppearance(previous,current []byte,w,h int,box Rect)bool{
  cy:=(box.Y+box.H*.5)/trackingDownscale
  hw:=box.W*.34/trackingDownscale
  hh:=box.H*.35/trackingDownscale
- if cx-hw<0||cy-hh<0||cx+hw>=float64(w)||cy+hh>=float64(h){return false}
+ if cx-hw<0||cy-hh<0||cx+hw>=float64(w)-.5||cy+hh>=float64(h)-.5{return false}
  total,large:=0,0
  for y:=0;y<7;y++{for x:=0;x<7;x++{
   px:=int(math.Round(cx-hw+2*hw*float64(x)/6))
