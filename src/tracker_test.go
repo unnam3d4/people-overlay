@@ -114,3 +114,18 @@ func TestSmallCCTVPersonCanMove(t *testing.T){
  if len(got)!=1{t.Fatal("small person lost")}
  if got[0].Box.X<=32{t.Fatalf("small person tracking froze: %+v",got)}
 }
+
+func TestOnePersonCrossingImaginaryScreenSplitKeepsID(t *testing.T){
+ // RVi video canvas may be shifted right/down by window chrome. A person
+ // crossing an algorithmic 4x4 ROI boundary is not a new person.
+ var tr personTracker
+ tr.layout(1920,1080,4)
+ now:=time.Unix(20000,0)
+ tr.observePeople([]Rect{{X:449,Y:160,W:55,H:119,Score:.93}},now)
+ orig:=tr.views(now)
+ tr.observePeople([]Rect{{X:465,Y:164,W:55,H:119,Score:.91}},now.Add(time.Second))
+ got:=tr.views(now.Add(time.Second))
+ if len(got)!=1||got[0].ID!=orig[0].ID{
+  t.Fatalf("camera ROI boundary created two boxes: %+v -> %+v",orig,got)
+ }
+}
