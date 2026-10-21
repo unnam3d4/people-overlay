@@ -32,6 +32,7 @@ def score(report):
         for key in list(visits):
             if key not in current:
                 visits.remove(key)
+                last_id.pop(key, None)
         for m in marks:
             if m["id"] not in visits:
                 visits.add(m["id"])
@@ -61,9 +62,6 @@ def score(report):
             if previous is not None and previous!=track["ID"]:
                 switches+=1
             last_id[identity]=track["ID"]
-        for identity in current:
-            if identity not in used_m and identity not in visits:
-                last_id.pop(identity,None)
     all_episodes=[ep for all_for_person in episodes.values() for ep in all_for_person]
     latency=[ep["hit_ms"]-ep["start_ms"] for ep in all_episodes if ep["hit_ms"] is not None]
     return {"name":report["manifest"]["name"],
