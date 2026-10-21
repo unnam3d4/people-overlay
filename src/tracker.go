@@ -742,6 +742,21 @@ func (t *personTracker) prune(now time.Time) {
 		if p.AIMisses >= 2 {
 			continue
 		}
+        // 16-camera mosaics share a single expensive CPU neural worker.
+        // Measured revisit gaps for an already found human are 1.2-2.0s;
+        // the universal 1.2/1.7s screen timeout killed valid people first,
+        // then the next NN observation recreated them with fresh IDs.
+        // Keep a narrowly bounded 2.6s maximum while AI is in flight;
+        // independent negative scans still remove a ghost immediately.
+        // Fullscreen/2x2/3x3 retain existing faster removal.
+        visibleGrace:=1200*time.Millisecond
+        aiGrace:=1700*time.Millisecond
+        lostGrace:=1200*time.Millisecond
+        if t.columns==4 {
+            visibleGrace=2400*time.Millisecond
+            aiGrace=2600*time.Millisecond
+            lostGrace=2400*time.Millisecond
+        }
 		if t.confirmationRequired {
 			if p.State == trackTentative {
 				if now.After(p.TentativeUntil) {
@@ -752,14 +767,14 @@ func (t *personTracker) prune(now time.Time) {
 				// slow inference is in flight.
 				keep = append(keep, p)
 				continue
-			} else if aiAge > 1200*time.Millisecond && visualAge > 700*time.Millisecond {
+			} else if aiAge > lostGrace && visualAge > 700*time.Millisecond {
 				p.State = trackLost
 			} else {
 				p.State = trackConfirmed
 			}
 		}
 		// Unverified boxes must disappear quickly rather than freeze for 9s.
-		if visualAge > 1200*time.Millisecond && aiAge > 1700*time.Millisecond {
+		if visualAge > visibleGrace && aiAge > aiGrace {
 			continue
 		}
 		// Even if the texture matcher claims a static match, force neural
