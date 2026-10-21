@@ -21,6 +21,9 @@ func maxScan(a,b int)int{if a>b{return a};return b}
 func minScan(a,b int)int{if a<b{return a};return b}
 func regionsForProfile(w,h int,profile int32)[]scanRegion{
  if w<1||h<1{return nil}
+ // A camera expanded to full screen must not be chopped into 16 AI
+ // crops: that splits the human silhouette and defeats detection.
+ if profile==0{return []scanRegion{{0,0,w,h}}}
  grid:=3
  if profile==1{grid=2}
  if profile==3{grid=4}
