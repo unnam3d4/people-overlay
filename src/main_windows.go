@@ -4,6 +4,8 @@ package main
 
 import (
  "fmt"
+ "image"
+ "image/png"
  "os"
  "path/filepath"
  "runtime"
@@ -98,6 +100,10 @@ func logError(e error){
  if err==nil{fmt.Fprintf(f,"%s %s\n",time.Now().Format(time.RFC3339),e);f.Close()}
 }
 var enabled atomic.Bool
+var scanMode atomic.Int32
+var sensitivity atomic.Int32
+var contrastMode atomic.Bool
+var captureRequested atomic.Bool
 var testOnly atomic.Bool
 var colour atomic.Int32
 var stopped atomic.Bool
@@ -117,56 +123,102 @@ func smooth(next,prev []Rect)[]Rect{
  }
  return next
 }
+func confidenceThreshold(level int32)float32{
+ switch level{
+ case 1:return .47
+ case 3:return .22
+ default:return .32
+ }
+}
+func saveCapture(pixels []byte,w,h int){
+ // Manual diagnostic only: image never leaves the machine.
+ if w<1||h<1||len(pixels)<w*h*4{return}
+ img:=image.NewRGBA(image.Rect(0,0,w,h))
+ for i:=0;i<w*h;i++{
+  q:=i*4
+  img.Pix[q],img.Pix[q+1],img.Pix[q+2],img.Pix[q+3]=pixels[q+2],pixels[q+1],pixels[q],255
+ }
+ path:=filepath.Join(os.Getenv("USERPROFILE"),"Desktop","PeopleOverlay_capture_"+time.Now().Format("20060102_150405")+".png")
+ file,e:=os.Create(path)
+ if e!=nil{logError(e);return}
+ e=png.Encode(file,img)
+ if ce:=file.Close();e==nil{e=ce}
+ if e!=nil{logError(e);return}
+ logError(fmt.Errorf("Diagnostic screenshot saved locally: %s",path))
+}
 func analyze(d *Detector){
  screen,_,_:=pDC.Call(0)
  if screen==0{logError(fmt.Errorf("GetDC failed"));return}
  defer pReleaseDC.Call(0,screen)
  var snap dib
  defer snap.close()
- var cache [5]regionCache
- scanIndex:=0
+ var cache []regionCache
+ var regs []scanRegion
+ var scheduler scanScheduler
  for !stopped.Load(){
-  if !enabled.Load()||testOnly.Load(){time.Sleep(200*time.Millisecond);continue}
+  if !enabled.Load()||testOnly.Load(){
+   time.Sleep(130*time.Millisecond)
+   continue
+  }
   w,h:=screenSize()
   if w<64||h<64{time.Sleep(time.Second);continue}
-  if snap.w!=w||snap.h!=h{
+  profile:=scanMode.Load()
+  if profile<1||profile>3{profile=2}
+  if snap.w!=w||snap.h!=h||profile!=scheduler.previousProfile{
    snap.close()
-   var e error;snap,e=newDIB(screen,w,h)
+   var e error
+   snap,e=newDIB(screen,w,h)
    if e!=nil{logError(e);time.Sleep(time.Second);continue}
-   cache=[5]regionCache{}
-   scanIndex=0
+   regs=regionsForProfile(w,h,profile)
+   cache=make([]regionCache,len(regs))
+   scheduler.reset(len(regs),w,h,profile)
+   boxes.mu.Lock();boxes.items=nil;boxes.updated=time.Time{};boxes.mu.Unlock()
+   version.Add(1)
   }
-  begin:=time.Now()
+  start:=time.Now()
   ok,_,_:=pBlt.Call(snap.dc,0,0,uintptr(w),uintptr(h),screen,0,0,srcCopy)
   if ok==0{logError(fmt.Errorf("BitBlt failed"));time.Sleep(time.Second);continue}
-  region:=zones(w,h)[scanIndex]
-  input,scale,px,py:=prepareRegionFrame(snap.pixels,w,h,region)
+  if captureRequested.Swap(false){
+   // Take an independent screenshot as requested from the tray.
+   copyPixels:=append([]byte(nil),snap.pixels...)
+   go saveCapture(copyPixels,w,h)
+  }
+  scheduler.observe(snap.pixels,w,h,regs)
+  index:=scheduler.next(time.Now(),profile)
+  reg:=regs[index]
+  input,scale,px,py:=prepareRegionFrameEnhanced(snap.pixels,w,h,reg,contrastMode.Load())
+  if input==nil{time.Sleep(200*time.Millisecond);continue}
   output,n,e:=d.Predict(input)
   if e!=nil{
    logError(e);enabled.Store(false)
-   alert("People Overlay - AI", "Ошибка распознавания: "+e.Error())
+   // No repeated modal errors that interrupt CCTV.
+   version.Add(1)
    continue
   }
-  found:=decodePeople(output,n,region.w,region.h,scale,px,py,.4)
-  for i:=range found{found[i].X+=float64(region.x);found[i].Y+=float64(region.y)}
-  cache[scanIndex]=regionCache{found:found,updated:time.Now()}
-  result:=combineCaches(cache,time.Now())
+  found:=decodePeople(output,n,reg.w,reg.h,scale,px,py,confidenceThreshold(sensitivity.Load()))
+  for i:=range found{
+   found[i].X+=float64(reg.x)
+   found[i].Y+=float64(reg.y)
+  }
+  now:=time.Now()
+  cache[index]=regionCache{found:found,updated:now}
+  scheduler.markScanned(index,now,len(found)>0)
+  ttl:=time.Duration(len(regs))*850*time.Millisecond
+  if ttl<6*time.Second{ttl=6*time.Second}
+  if ttl>22*time.Second{ttl=22*time.Second}
+  result:=combineCacheList(cache,now,ttl)
   boxes.mu.Lock()
   result=smooth(result,boxes.items)
-  boxes.items=result;boxes.updated=time.Now()
+  boxes.items=result
+  boxes.updated=now
   boxes.mu.Unlock()
   version.Add(1)
-  // Favor a large fullscreen person; scan subregions round-robin otherwise.
-  if scanIndex==0{
-   large:=false
-   for _,v:=range found{if v.H>float64(h)*.2{large=true;break}}
-   if large{scanIndex=0}else{scanIndex=1}
-  }else{scanIndex=(scanIndex+1)%5}
-  busy:=time.Since(begin)
-  delay:=busy*2
-  if delay<750*time.Millisecond{delay=750*time.Millisecond}
-  if delay>8*time.Second{delay=8*time.Second}
-  for end:=time.Now().Add(delay);time.Now().Before(end)&&!stopped.Load();{time.Sleep(130*time.Millisecond)}
+  busy:=time.Since(start)
+  delay:=throttleFor(profile,busy)
+  for deadline:=time.Now().Add(delay);!stopped.Load()&&time.Now().Before(deadline);{
+   if !enabled.Load()||testOnly.Load()||scanMode.Load()!=profile{break}
+   time.Sleep(45*time.Millisecond)
+  }
  }
 }
 func maxI(a,b int)int{if a>b{return a};return b}
@@ -287,16 +339,29 @@ func main(){
  w,h:=screenSize()
  hwnd,e:=makeOverlay(w,h)
  if e!=nil{logError(e);alert("People Overlay AI",e.Error());return}
- enabled.Store(true);colour.Store(1)
+ enabled.Store(true);colour.Store(1);scanMode.Store(3);sensitivity.Store(3)
  if e=registerHotkeys();e!=nil{alert("People Overlay AI",e.Error());return}
  defer func(){for i:=1;i<=6;i++{pUnregister.Call(0,uintptr(i))}}()
+ tray,e:=newTray(hwnd)
+ if e!=nil{logError(e);alert("People Overlay AI","Не удалось создать значок трея: "+e.Error());return}
+ defer tray.close()
  go render(hwnd)
  go analyze(d)
- alert("People Overlay AI","Запущено.\n\nCtrl+Alt+F9: ВКЛ/ВЫКЛ\nCtrl+Alt+1/2/3: зелёный/красный/оранжевый\nCtrl+Alt+F6: тест уголков\nCtrl+Alt+F10: выход")
  var m message
  for{
   r,_,_:=pMessage.Call(uintptr(unsafe.Pointer(&m)),0,0,0)
   if r==0||r==^uintptr(0){break}
+  if tray.taskbarMessage!=0&&m.Message==tray.taskbarMessage{
+   tray.reAdd()
+   continue
+  }
+  if m.Message==trayMessage{
+   switch uint32(m.LParam){
+   case wmRButtonUp,wmContextMenu:tray.popupMenu()
+   case wmLButtonDouble:enabled.Store(!enabled.Load());version.Add(1)
+   }
+   continue
+  }
   if m.Message==wmHotkey{
    switch m.WParam{
    case 1:enabled.Store(!enabled.Load());version.Add(1)
