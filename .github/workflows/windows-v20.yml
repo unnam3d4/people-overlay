@@ -72,6 +72,21 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install pillow==12.1.1 psutil==7.2.2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - name: Execute unit/regression tests on Windows x64 and x86 (not Windows 7)
+        shell: pwsh
+        working-directory: src
+        run: |
+          $env:CGO_ENABLED = '0'
+          $env:GOARCH = 'amd64'
+          go test -tags ncnn ./...
+          if ($LASTEXITCODE -ne 0) { throw 'Windows x64 Go tests failed' }
+          $env:GOARCH = '386'
+          go test -tags ncnn ./...
+          if ($LASTEXITCODE -ne 0) { throw 'Windows x86 Go tests failed' }
       - name: Actual embedded-model positive and negative self-tests on both architectures
         shell: pwsh
         run: |
@@ -85,7 +100,24 @@ jobs:
           }
       - name: Reproducible photographic synthetic 15 and 30 FPS scenarios
         run: python scripts/generate_pixel_benchmark.py --source src/testdata/bus-reference.jpg --output _fixture
-      - name: Identical baseline and candidate pixel replay (sequential, measured delay)
+      - name: Interactive Win32 fixture BitBlt/DIB and UpdateLayeredWindow proof (headless runner may lack desktop)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          New-Item -ItemType Directory -Force benchmark-results/capture-test | Out-Null
+          $exe = (Resolve-Path DIST/PeopleOverlay_v2.0_candidate_YOLO26n_x64.exe).Path
+          $manifest = (Resolve-Path _fixture/single_lifecycle_15fps.json).Path
+          $out = Join-Path (Resolve-Path benchmark-results).Path 'capture-test'
+          $p = Start-Process -FilePath $exe -ArgumentList @('--capture-test', ('"' + $manifest + '"'), ('"' + $out + '"')) -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or !(Test-Path (Join-Path $out 'capture-test.json'))) {
+            $log = Join-Path $env:LOCALAPPDATA 'PeopleOverlay/PeopleOverlay.log'
+            if (Test-Path $log) { Get-Content $log -Tail 30 | Write-Host }
+            '{"passed":false,"reason":"Win32 interactive fixture capture unavailable or failed on CI host; not evidence of RVi support"}' | Out-File -Encoding utf8 (Join-Path $out 'capture-test-status.json')
+            throw "Interactive Win32 capture/overlay probe failed or no interactive desktop; exit $($p.ExitCode)"
+          }
+          $check = Get-Content (Join-Path $out 'capture-test.json') -Raw | ConvertFrom-Json
+          if (!$check.passed) { throw 'Captured proof report did not confirm Win32 success' }
+      - name: Identical baseline and candidate replay (measured, simulated 300ms and 700ms delay; sequential)
         run: python scripts/run_pixel_benchmarks.py --exe v19=DIST/v19-benchmark-x64.exe --exe v20=DIST/PeopleOverlay_v2.0_candidate_YOLO26n_x64.exe --fixtures _fixture --output benchmark-results/replay
       - name: Score all misses, false boxes, delay and identity changes
         shell: pwsh
@@ -111,4 +143,35 @@ jobs:
           path: |
             DIST/*
             PeopleOverlay_v2.0_candidate_portable.zip
+          retention-days: 90
+
+  native-reference:
+    needs: package
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: v20-internal-candidates
+          path: DIST
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - name: Install official frozen native-reference framework (builder only)
+        run: python -m pip install ultralytics==8.4.78 numpy opencv-python-headless
+      - name: Compare both actual NCNN models and Go decoder to official Ultralytics on real people photos
+        shell: pwsh
+        run: |
+          python scripts/validate_native.py --v18 DIST/PeopleOverlay_v2.0_candidate_YOLOv8n_x64.exe --v19 DIST/PeopleOverlay_v2.0_candidate_YOLO26n_x64.exe --work native-reference --go (Get-Command go).Source --download
+          if ($LASTEXITCODE -ne 0) { throw 'Ultralytics / NCNN comparison failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PeopleOverlay_v2.0_native_NCNN_vs_Ultralytics_evidence
+          path: native-reference/native-validation.json
           retention-days: 90
