@@ -13,8 +13,8 @@ for config in "x64 x86_64-w64-mingw32" "x86 i686-w64-mingw32"; do
  install="$ROOT/_ncnn_sdk_$arch"
  cmake -S "$NCNN_SRC" -B "$build" -G Ninja \
   -DCMAKE_SYSTEM_NAME=Windows \
-  -DCMAKE_C_COMPILER="${prefix}-gcc" \
-  -DCMAKE_CXX_COMPILER="${prefix}-g++" \
+  -DCMAKE_C_COMPILER="${prefix}-gcc-posix" \
+  -DCMAKE_CXX_COMPILER="${prefix}-g++-posix" \
   -DCMAKE_RC_COMPILER="${prefix}-windres" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX="$install" \
@@ -33,7 +33,7 @@ for config in "x64 x86_64-w64-mingw32" "x86 i686-w64-mingw32"; do
  lib="$install/lib/libncnn.a"
  if [[ ! -f "$lib" ]];then echo "Missing $lib";exit 1;fi
  mkdir -p "$ROOT/_output/$arch"
- "${prefix}-g++" -std=c++11 -O2 -D_WIN32_WINNT=0x0601 -DWINVER=0x0601 \
+ "${prefix}-g++-posix" -std=c++11 -O2 -D_WIN32_WINNT=0x0601 -DWINVER=0x0601 \
   -I"$install/include/ncnn" -shared "$ROOT/native/bridge.cpp" "$lib" \
   -Wl,--kill-at -static -static-libgcc -static-libstdc++ \
   -o "$ROOT/_output/$arch/ncnnbridge.dll"
