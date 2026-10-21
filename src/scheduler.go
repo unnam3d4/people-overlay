@@ -393,7 +393,9 @@ func(s *scanScheduler)confirmationRecheck(now time.Time,candidates []TrackView,r
  if ageOf(fallback)>13{return fallback}
  best,oldest:=fallback,.5
  for _,v:=range candidates{for i:=1;i<len(regs);i++{
-  if s.scanOwner(v.Box)!=i {continue}
+  // Core ownership applies only to the 4x4 adaptive grid. Other profiles
+  // retain their existing padded-ROI candidate confirmation behavior.
+  if s.previousProfile==3 && s.scanOwner(v.Box)!=i {continue}
   if !scanContainsBox(regs[i],v.Box,.9){continue}
   age:=ageOf(i)
   if age>oldest{best,oldest=i,age}
