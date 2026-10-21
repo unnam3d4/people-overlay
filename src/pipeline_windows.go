@@ -73,10 +73,11 @@ func analyze(d *Detector){
  publish:=func(now time.Time){
   items:=tracker.views(now)
   boxes.mu.Lock()
+  changed:=!sameTrackViews(boxes.items,items)
   boxes.items=items
   boxes.updated=now
   boxes.mu.Unlock()
-  version.Add(1)
+  if changed{version.Add(1)}
  }
 
  for !stopped.Load(){
