@@ -126,9 +126,18 @@ def generate(source, output, seconds=24, scenarios=None):
             manifest = {"name": f"{scenario}_{fps}fps", "source": source_info, "fps": fps,
                         "profile": 3 if grid else 0, "sensitivity": 2, "threads": 1,
                         "frames": frames[::30//fps]}
-            path = output/f"{scenario}_{fps}fps.json"
-            path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-            print(path)
+            # Baseline measured timing, plus stress at 300/700 ms video-clock
+            # lower bound. These simulate slow CPU inference *timing*, never
+            # pretend to measure actual CPU or sleeping inference calls.
+            for floor in (0, 300, 700):
+                variant = dict(manifest)
+                if floor:
+                    variant["inference_delay_floor_ms"] = floor
+                label = f"{scenario}_{floor}ms_{fps}fps" if floor else f"{scenario}_{fps}fps"
+                variant["name"] = label
+                path = output/f"{label}.json"
+                path.write_text(json.dumps(variant, indent=2), encoding="utf-8")
+                print(path)
     (output/"SOURCE.json").write_text(json.dumps(source_info, indent=2), encoding="utf-8")
 
 
