@@ -121,6 +121,10 @@ func motionShift(previous,current []byte,w,h int,box Rect)(float64,float64,bool)
  return float64(bestDX*trackingDownscale),float64(bestDY*trackingDownscale),true
 }
 func (t *personTracker)step(pixels []byte,w,h int,now time.Time) {
+ if len(t.people)==0 {
+  t.prevGray=nil
+  return
+ }
  gray,gw,gh:=grayscaleQuarter(pixels,w,h)
  if gray==nil{return}
  if t.grayW!=gw||t.grayH!=gh||len(t.prevGray)!=len(gray){
