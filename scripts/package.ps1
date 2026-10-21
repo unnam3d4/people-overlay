@@ -30,7 +30,7 @@ function Fetch([string]$url,[string]$dest,[long]$minimum) {
 $model = Join-Path $cache 'model.onnx'
 $nuget = Join-Path $cache 'onnxruntime.nupkg.zip'
 Fetch 'https://huggingface.co/inference4j/yolov8n/resolve/main/model.onnx?download=true' $model 5000000
-Fetch 'https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/1.11.1' $nuget 2000000
+Fetch 'https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.11.1/microsoft.ml.onnxruntime.1.11.1.nupkg' $nuget 2000000
 $ort = Join-Path $cache 'onnxruntime-package'
 Expand-Archive -LiteralPath $nuget -DestinationPath $ort -Force
 $sourceDir = Join-Path $project 'src'
