@@ -190,16 +190,23 @@ func (t *personTracker)prune(now time.Time){
 func(t *personTracker)views(now time.Time)[]TrackView{
  t.prune(now)
  views:=make([]TrackView,0,len(t.people))
+ // IDs are stable; duplicate regions must never create duplicate labels.
+ // Keep the most recently AI-confirmed overlapping track.
+ ages:=make([]time.Time,0,len(t.people))
  for _,p:=range t.people{
-  // Hide closely overlapping duplicate tiles with the freshest AI label.
-  unique:=true
+  duplicate:=-1
   for i,v:=range views{
-   if overlap(p.Box,v.Box)>.65{
-    if p.LastAI.After(t.people[i].LastAI){views[i]=TrackView{Box:p.Box,ID:p.ID}}
-    unique=false;break
-   }
+   if overlap(p.Box,v.Box)>.65{duplicate=i;break}
   }
-  if unique{views=append(views,TrackView{Box:p.Box,ID:p.ID})}
+  if duplicate>=0{
+   if p.LastAI.After(ages[duplicate]){
+    views[duplicate]=TrackView{Box:p.Box,ID:p.ID}
+    ages[duplicate]=p.LastAI
+   }
+   continue
+  }
+  views=append(views,TrackView{Box:p.Box,ID:p.ID})
+  ages=append(ages,p.LastAI)
  }
  return views
 }
