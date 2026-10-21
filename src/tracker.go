@@ -138,7 +138,9 @@ func (t *personTracker)step(pixels []byte,w,h int,now time.Time) {
   next:=p.Box
   next.X=math.Max(0,math.Min(float64(w)-next.W,next.X+dx))
   next.Y=math.Max(0,math.Min(float64(h)-next.H,next.Y+dy))
-  if p.Tile!=0&&t.tileOf(next)!=p.Tile{continue}
+  // A screen-split border is not necessarily a camera border (RVi has
+  // headers/sidebars). Trust the validated local image match instead.
+  p.Tile=t.tileOf(next)
   p.LastVisual=now
   if dx!=0||dy!=0 {
    p.Box=next
@@ -181,7 +183,7 @@ func(t *personTracker)observePeople(detections []Rect,at time.Time){
   if d.W<6||d.H<9{continue}
   duplicate:=false
   for _,u:=range unique{
-   if t.tileOf(d)==t.tileOf(u)&&samePersonGeometry(d,u){duplicate=true;break}
+   if samePersonGeometry(d,u){duplicate=true;break}
   }
   if !duplicate{unique=append(unique,d)}
  }
@@ -190,7 +192,7 @@ func(t *personTracker)observePeople(detections []Rect,at time.Time){
   cell:=t.tileOf(d)
   best,bestScore:=-1,-1e9
   for j,p:=range t.people{
-   if used[j]||cell!=p.Tile{continue}
+   if used[j] || (cell!=p.Tile&&!samePersonGeometry(d,p.Box)){continue}
    iou:=overlap(d,p.Box)
    dist:=centerSeparation(d,p.Box)
    widthRatio:=math.Min(d.W,p.Box.W)/math.Max(d.W,p.Box.W)
@@ -210,6 +212,7 @@ func(t *personTracker)observePeople(detections []Rect,at time.Time){
    p.Box.Score=d.Score
    p.LastAI=at
    p.LastVisual=at
+   p.Tile=cell
    used[best]=true
    continue
   }
@@ -217,7 +220,7 @@ func(t *personTracker)observePeople(detections []Rect,at time.Time){
   // an already matched track, skip it; it is not a new person.
   dup:=false
   for _,p:=range t.people{
-   if p.Tile==cell&&samePersonGeometry(d,p.Box){dup=true;break}
+   if samePersonGeometry(d,p.Box){dup=true;break}
   }
   if dup||len(t.people)>=maxTrackedPeople{continue}
   t.nextID++
@@ -235,7 +238,7 @@ func (t *personTracker)coalesce(){
  for i:=0;i<len(t.people);i++{
   for j:=i+1;j<len(t.people);{
    a,b:=t.people[i],t.people[j]
-   if a.Tile!=b.Tile||!samePersonGeometry(a.Box,b.Box){j++;continue}
+   if !samePersonGeometry(a.Box,b.Box){j++;continue}
    if b.LastAI.After(a.LastAI){a.Box=b.Box;a.LastAI=b.LastAI}
    if b.LastVisual.After(a.LastVisual){a.LastVisual=b.LastVisual}
    if b.LastMotion.After(a.LastMotion){a.LastMotion=b.LastMotion}
