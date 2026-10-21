@@ -189,6 +189,10 @@ func drawCorners(d *dib,items []Rect,color int32){
   for _,x:=range []int{x1,x2}{for _,y:=range []int{y1,y2}{
    dx,dy:=lx,ly
    if x==x2{dx=-lx};if y==y2{dy=-ly}
+   // Dark outer contour improves visibility on both bright daytime
+   // and black-and-white night CCTV without filling the video with boxes.
+   stroke(d,x,y,x+dx,y,thick+2,12,20,24)
+   stroke(d,x,y,x,y+dy,thick+2,12,20,24)
    stroke(d,x,y,x+dx,y,thick,r,g,b)
    stroke(d,x,y,x,y+dy,thick,r,g,b)
   }}
