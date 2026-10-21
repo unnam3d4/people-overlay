@@ -1,0 +1,56 @@
+name: Inspect alternative real annotated pedestrian footage
+on:
+  push:
+    paths: ['.github/workflows/inspect-public-video.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download authentic raw video and documented CVAT/COCO annotations from GitHub
+        shell: bash
+        run: |
+          python - <<'PY'
+          import urllib.request, zipfile, io, json, hashlib, os
+          base='https://raw.githubusercontent.com/razayaseen5/Multi-Target-Pedestrian-Pose-CVAT-Video-Dataset/main/'
+          files=[
+           'Media_Assets/source_raw_video.mp4',
+           'Exported_Annotations/COCO_Video_Head_and_Body_Keypoints_Interpolation.zip',
+           'Exported_Annotations/Person_Keypoints%20Interpolation_CVAT%20For%20Video.zip',
+           'Exported_Annotations/CVAT_Video_Head_and_Body_Keypoints_Interpolation.zip',
+          ]
+          for path in files:
+           try:
+            data=urllib.request.urlopen(base+path,timeout=40).read(20_000_001)
+            print('FILE',path,'SIZE',len(data),'SHA256',hashlib.sha256(data).hexdigest(),flush=True)
+            if data[:4]==b'PK\x03\x04':
+             with zipfile.ZipFile(io.BytesIO(data)) as z:
+              for n in z.namelist()[:15]:
+               print('ZIP',n,'bytes',z.getinfo(n).file_size)
+               if n.endswith('.xml'):
+                import xml.etree.ElementTree as ET
+                root=ET.fromstring(z.read(n))
+                print('XML_ROOT',root.tag,root.attrib)
+                for node in root.iter():
+                 if node.tag in ('track','box','points','image','label'):
+                  print('XML_NODE',node.tag,node.attrib)
+                  if node.tag in ('box','points'):break
+               if n.endswith('.json'):
+                obj=json.loads(z.read(n))
+                print('JSON_KEYS',list(obj)[:20])
+                for k in ('images','annotations','categories'):
+                 val=obj.get(k,[])
+                 print('JSON',k,'COUNT',len(val),'FIRST',str(val[0] if val else '')[:700])
+            if path.endswith('.mp4'):
+             os.makedirs('_public_video',exist_ok=True)
+             open('_public_video/source_raw_video.mp4','wb').write(data)
+           except Exception as e:
+            print('DOWNLOAD/INSPECT FAILED:',type(e).__name__,str(e),flush=True)
+            raise
+          PY
+      - name: Probe footage metadata
+        run: ffprobe -v error -show_entries stream=width,height,r_frame_rate,duration -of json _public_video/source_raw_video.mp4
