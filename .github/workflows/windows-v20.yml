@@ -270,3 +270,44 @@ jobs:
             benchmark-results/github-real/
             _real_video_fixture/SOURCE-GITHUB-CVAT.json
           retention-days: 90
+
+  # This is the REAL WHOLE-PERSON evaluation axis, unlike supplementary face
+  # landmark plots. Official PETS2009 research CCTV frames and University of
+  # Reading/OpenTraj hand-labelled full-person bboxes (identity per frame).
+  # Kaggle mirror and annotations are downloaded only on the QA runner.
+  pets-real-person-body:
+    needs: package
+    runs-on: windows-2022
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: v20-internal-candidates
+          path: DIST
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install research-only PETS dataset downloader and pixel evaluation tools
+        run: python -m pip install kagglehub pillow==12.1.1 numpy==2.2.6 psutil==7.2.2
+      - name: Fetch real PETS2009 video frames and independently labelled WHOLE-BODY IDs
+        run: python scripts/pets2009_person_body_replay.py --output _pets_gt_fixture --fps 15 --duration 7
+      - name: Run production processing on true filmed people with body-GT (baseline and candidate in sequence)
+        run: python scripts/run_pixel_benchmarks.py --exe v19=DIST/v19-benchmark-x64.exe --exe v20=DIST/PeopleOverlay_v2.0_candidate_YOLO26n_x64.exe --fixtures _pets_gt_fixture --output benchmark-results/pets2009/replay
+      - name: Evaluate full person-body IoU recall precision ID continuity and missing arrivals
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force benchmark-results/pets2009 | Out-Null
+          $reports = Get-ChildItem benchmark-results/pets2009/replay/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName }
+          python scripts/evaluate_pixel_benchmark.py @reports --output benchmark-results/pets2009/body-comparison.json
+          if ($LASTEXITCODE -ne 0) { throw 'PETS2009 person-body evaluation failed' }
+      - name: Block product promotion if real body bbox tracking regresses
+        run: python scripts/gate_pixel_benchmark.py benchmark-results/pets2009/body-comparison.json --max-recall-drop 0.05
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PeopleOverlay_v20_PETS2009_real_video_PERSON_BODY_bbox_evidence
+          path: |
+            benchmark-results/pets2009/
+            _pets_gt_fixture/PETS2009_PROVENANCE.json
+          retention-days: 90
