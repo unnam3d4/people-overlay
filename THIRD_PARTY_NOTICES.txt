@@ -1,0 +1,18 @@
+PEOPLE OVERLAY AI — LICENSE INFORMATION
+
+Application code: GNU Affero General Public License v3.0 (AGPL-3.0).
+The full license text accompanies released archives.
+Source code: https://github.com/unnam3d4/people-overlay
+
+Object detection weights:
+Ultralytics YOLOv8n (AGPL-3.0).
+Distribution: https://huggingface.co/inference4j/yolov8n
+Original source: https://github.com/ultralytics/ultralytics
+
+Runtime: Microsoft ONNX Runtime 1.11.1, MIT license.
+https://github.com/microsoft/onnxruntime
+https://github.com/microsoft/onnxruntime/blob/main/LICENSE
+
+The distributed EXEs contain third-party weights and libraries.
+An offline bundle unpacks model.onnx and onnxruntime.dll into LOCALAPPDATA.
+The application is experimental and is not validated for security monitoring.
