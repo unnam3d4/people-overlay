@@ -117,6 +117,8 @@ func(s *scanScheduler)priorityTracked(views []TrackView,regions []scanRegion,now
    by1:=math.Max(v.Box.Y,float64(r.y))
    bx2:=math.Min(v.Box.X+v.Box.W,float64(r.x+r.w))
    by2:=math.Min(v.Box.Y+v.Box.H,float64(r.y+r.h))
+   // Two negative extents may otherwise multiply into a positive area.
+   if bx2<=bx1||by2<=by1{continue}
    if (bx2-bx1)*(by2-by1)<.82*v.Box.W*v.Box.H{continue}
    age:=120.0
    if !s.lastScan[i].IsZero(){age=now.Sub(s.lastScan[i]).Seconds()}
