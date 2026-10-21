@@ -79,6 +79,7 @@ func analyze(d *Detector){
   boxes.mu.Lock()
   boxes.items=items
   boxes.updated=now
+  trackedCount.Store(int32(len(items)))
   boxes.mu.Unlock()
   // Compare against the last frame actually sent to the renderer, not
   // the prior tracking sample; otherwise slow 1px-per-frame movement
@@ -151,6 +152,7 @@ func analyze(d *Detector){
     sch.markScanned(regionIndex(regions,result.zone),now,len(result.detected)>0)
     corrected:=compensateLateDetections(result.detected,result.captured,tracker.views(now))
     tracker.observePeople(corrected,now)
+    lastInferenceMS.Store(result.duration.Milliseconds())
     lastBusy=result.duration
     nextInference=now.Add(throttleFor(profile,result.duration))
    default:
