@@ -324,7 +324,7 @@ func runBenchmarkCLI(args []string) error {
 					applied := benchmarkMS(now.Sub(origin))
 					result.AppliedMS = &applied
 					zone := regs[result.RegionIndex]
-					sch.markScanned(result.RegionIndex, now, len(result.Detections) > 0)
+					sch.markScannedPeople(result.RegionIndex, now, result.Detections)
 					if hasAware {
 						aware.observePeopleFromCapture(result.Detections, pendingViews, pendingPixels, zone, pendingAt, now)
 					} else {
