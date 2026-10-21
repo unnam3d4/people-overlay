@@ -192,6 +192,12 @@ func (t *personTracker)step(pixels []byte,w,h int,now time.Time) {
   p:=&t.people[i]
   if !p.AnchorValid{p.Anchor,p.AnchorValid=sampleAnchor(t.prevGray,gw,gh,p.Box)}
   dx,dy,good:=motionShift(t.prevGray,gray,gw,gh,p.Box)
+  // A stable background often returns a perfect zero-motion match. It is
+  // not evidence of the *person* unless the AI-anchored texture is present.
+  if good&&dx==0&&dy==0&&p.AnchorValid{
+   nowPatch,ok:=sampleAnchor(gray,gw,gh,p.Box)
+   if !ok||!anchorStillPresent(p.Anchor,nowPatch){good=false}
+  }
   dt:=now.Sub(p.LastStep).Seconds()
   if dt<=0||dt>.4{dt=.115}
   p.LastStep=now
@@ -229,12 +235,18 @@ func (t *personTracker)step(pixels []byte,w,h int,now time.Time) {
   next:=p.Box
   next.X=math.Max(0,math.Min(float64(w)-next.W,next.X+dx))
   next.Y=math.Max(0,math.Min(float64(h)-next.H,next.Y+dy))
-  // ROI boundaries may not align with the actual RVi video grid.
-  p.Tile=t.tileOf(next)
+  // Two adjacent video tiles show different camera feeds. An optical
+  // template must never carry a tracked person into a different camera.
+  if p.Tile>0&&t.tileOf(next)!=p.Tile{
+   p.VelocityX,p.VelocityY=0,0
+   continue
+  }
   if dx!=0||dy!=0{p.Box=next}
-  if good {
-   if sampled,ok:=sampleAnchor(gray,gw,gh,p.Box);ok{
-    p.Anchor=sampled;p.AnchorValid=true
+  if good&&p.AnchorValid&&dx!=0||good&&p.AnchorValid&&dy!=0{
+   if sampled,ok:=sampleAnchor(gray,gw,gh,p.Box);ok&&anchorStillPresent(p.Anchor,sampled){
+    // Update clothing template only after a verified movement, never
+    // on newly static *background* where the person used to stand.
+    p.Anchor=sampled
    }
   }
  }
@@ -297,11 +309,19 @@ func (t *personTracker)observePeople(detections []Rect,at time.Time){
 // scans of the *same fully visible region* are enough to retire a ghost box.
 // Crops touching the edge of the person's box are intentionally ignored.
 func (t *personTracker)noteRegionScan(region scanRegion,now time.Time){
+ t.noteRegionScanCaptured(region,now,now,0)
+}
+// An in-flight inference describes the screen *at capture time*.
+// Do not count a miss against a person who appeared afterwards, or
+// against a person belonging to a different CCTV camera tile.
+func (t *personTracker)noteRegionScanCaptured(region scanRegion,now,capturedAt time.Time,tileID int){
  left,top:=float64(region.x),float64(region.y)
  right,bottom:=float64(region.x+region.w),float64(region.y+region.h)
  for i:=range t.people{
   p:=&t.people[i]
   if !p.LastAI.Before(now)||p.Box.W<=0||p.Box.H<=0{continue}
+  if p.LastAI.After(capturedAt){continue}
+  if tileID>0&&p.Tile>0&&p.Tile!=tileID{continue}
   w:=math.Min(p.Box.X+p.Box.W,right)-math.Max(p.Box.X,left)
   h:=math.Min(p.Box.Y+p.Box.H,bottom)-math.Max(p.Box.Y,top)
   if w<=0||h<=0||w*h<.90*p.Box.W*p.Box.H{continue}
