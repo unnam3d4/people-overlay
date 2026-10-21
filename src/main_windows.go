@@ -43,6 +43,10 @@ var(
  pBlt=gdi32.NewProc("BitBlt")
  pPriority=kernel32.NewProc("SetPriorityClass")
  pProcess=kernel32.NewProc("GetCurrentProcess")
+ pCreateMutex=kernel32.NewProc("CreateMutexW")
+ pCloseHandle=kernel32.NewProc("CloseHandle")
+ pLastError=kernel32.NewProc("GetLastError")
+ pFindWindow=user32.NewProc("FindWindowW")
 )
 const(
  layered=0x80000
@@ -252,6 +256,27 @@ func registerHotkeys()error{
  }
  return nil
 }
+// Windows 7/10/11 share one per-session mutex even across x86/x64 EXEs.
+// Previously another build could keep drawing on top of the current one.
+func singletonGuard()(func(),error){
+ name:=syscall.StringToUTF16Ptr("Local\\PeopleOverlayAI_SingleInstance")
+ mutex,_,err:=pCreateMutex.Call(0,0,uintptr(unsafe.Pointer(name)))
+ if mutex==0{return nil,fmt.Errorf("CreateMutexW: %v",err)}
+ code,_,_:=pLastError.Call()
+ if code==183 {
+  pCloseHandle.Call(mutex)
+  return nil,fmt.Errorf("People Overlay AI уже запущен: закрой предыдущую копию через трей или Диспетчер задач")
+ }
+ // Older builds do not have this mutex; find their existing overlay window.
+ cls:=syscall.StringToUTF16Ptr("STATIC")
+ title:=syscall.StringToUTF16Ptr("People Overlay AI")
+ other,_,_:=pFindWindow.Call(uintptr(unsafe.Pointer(cls)),uintptr(unsafe.Pointer(title)))
+ if other!=0 {
+  pCloseHandle.Call(mutex)
+  return nil,fmt.Errorf("Обнаружена другая версия People Overlay AI. Закрой старый EXE перед запуском новой версии, иначе рамки будут накладываться.")
+ }
+ return func(){pCloseHandle.Call(mutex)},nil
+}
 func main(){
  if len(os.Args)>1&&os.Args[1]=="--selftest"{
   root,e:=locateResources()
@@ -266,6 +291,9 @@ func main(){
  runtime.LockOSThread()
  defer runtime.UnlockOSThread()
  pDPI.Call()
+ unlock,guardErr:=singletonGuard()
+ if guardErr!=nil{alert("People Overlay AI",guardErr.Error());return}
+ defer unlock()
  proc,_,_:=pProcess.Call();pPriority.Call(proc,belowNormal)
  root,e:=locateResources()
  if e!=nil{alert("People Overlay AI",e.Error());return}
