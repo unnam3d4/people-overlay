@@ -29,8 +29,8 @@ func TestStationaryTrackExpires(t *testing.T){
  var tr personTracker
  now:=time.Unix(3000,0)
  tr.observePeople([]Rect{{X:50,Y:50,W:50,H:80,Score:.9}},now)
- if len(tr.views(now.Add(5*time.Second)))!=1{t.Fatal("expired too early")}
- if len(tr.views(now.Add(6*time.Second)))!=0{t.Fatal("phantom person did not expire")}
+ if len(tr.views(now.Add(time.Second)))!=1{t.Fatal("vanished before brief occlusion tolerance")}
+ if len(tr.views(now.Add(2*time.Second)))!=0{t.Fatal("unverified person should not freeze for 5-9 seconds")}
 }
 func TestNoFakePersonWithoutAI(t *testing.T){
  var tr personTracker
@@ -66,4 +66,51 @@ func TestImageTrackerFollowsMovingSilhouette(t *testing.T){
  out:=tr.views(start.Add(130*time.Millisecond))
  if len(out)!=1{t.Fatalf("person disappeared %+v",out)}
  if out[0].Box.X<34||out[0].Box.Y<19||math.Abs(out[0].Box.X-38)>5||math.Abs(out[0].Box.Y-21)>4{t.Fatalf("tracking failed to follow: %+v",out)}
+}
+
+func TestDifferentSizedROIsOnePerson(t *testing.T){
+ var tr personTracker
+ now:=time.Unix(12000,0)
+ tr.layout(1920,1080,4)
+ tr.observePeople([]Rect{{X:218,Y:154,W:72,H:146,Score:.91}},now)
+ a:=tr.views(now)
+ tr.observePeople([]Rect{{X:229,Y:166,W:52,H:120,Score:.76}},now.Add(time.Second))
+ b:=tr.views(now.Add(time.Second))
+ if len(b)!=1||b[0].ID!=a[0].ID{t.Fatalf("same silhouette duplicated by overlapping ROI: %+v",b)}
+}
+
+func TestPartialOverlapTwoPeopleRemainIndependent(t *testing.T){
+ var tr personTracker
+ now:=time.Unix(13000,0)
+ tr.layout(1920,1080,4)
+ tr.observePeople([]Rect{
+  {X:110,Y:100,W:50,H:120,Score:.9},
+  {X:145,Y:102,W:50,H:115,Score:.88},
+ },now)
+ if len(tr.views(now))!=2{t.Fatal("genuinely separate people should not merge")}
+}
+
+func TestLostVisualRemovesFrozenBox(t *testing.T){
+ var tr personTracker
+ start:=time.Unix(14000,0)
+ tr.observePeople([]Rect{{X:40,Y:30,W:36,H:70,Score:.95}},start)
+ before,w,h:=syntheticPatch(0,0)
+ blank:=make([]byte,len(before))
+ tr.step(before,w,h,start)
+ tr.step(blank,w,h,start.Add(140*time.Millisecond))
+ if len(tr.views(start.Add(2*time.Second)))!=0{t.Fatal("frozen corners remain after visual evidence disappeared")}
+}
+
+func TestSmallCCTVPersonCanMove(t *testing.T){
+ // Previously people narrower than 28px were rejected unconditionally.
+ var tr personTracker
+ start:=time.Unix(15000,0)
+ tr.observePeople([]Rect{{X:32,Y:20,W:24,H:46,Score:.92}},start)
+ before,w,h:=syntheticPatch(0,0)
+ after,_,_:=syntheticPatch(4,2)
+ tr.step(before,w,h,start)
+ tr.step(after,w,h,start.Add(140*time.Millisecond))
+ got:=tr.views(start.Add(140*time.Millisecond))
+ if len(got)!=1{t.Fatal("small person lost")}
+ if got[0].Box.X<=32{t.Fatalf("small person tracking froze: %+v",got)}
 }
