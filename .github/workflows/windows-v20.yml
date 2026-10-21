@@ -190,3 +190,41 @@ jobs:
           name: PeopleOverlay_v2.0_native_NCNN_vs_Ultralytics_evidence
           path: native-reference/native-validation.json
           retention-days: 90
+
+  # Offline *application* replay of two filmed, independently annotated CCTV
+  # corridors. The CI builder may download videos; release EXE never connects
+  # to networks. This is a separate validation axis from photographic synth.
+  caviar-real-video:
+    needs: package
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: v20-internal-candidates
+          path: DIST
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install benchmark-only CCTV decoder dependencies
+        run: python -m pip install opencv-python-headless==4.11.0.86 numpy==2.2.6 psutil==7.2.2
+      - name: Retrieve original CAVIAR MPEG and hand-annotated ground truth
+        run: python scripts/caviar_real_replay.py --cache _caviar_source --output _caviar_fixture --duration 10
+      - name: Run true filmed-person replay for v1.9 then v20, never simultaneously
+        run: python scripts/run_pixel_benchmarks.py --exe v19=DIST/v19-benchmark-x64.exe --exe v20=DIST/PeopleOverlay_v2.0_candidate_YOLO26n_x64.exe --fixtures _caviar_fixture --output benchmark-results/caviar/replay
+      - name: Score filmed-person precision recall ID switches first-detection latency and ghosts
+        shell: pwsh
+        run: |
+          $reports = Get-ChildItem benchmark-results/caviar/replay/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName }
+          python scripts/evaluate_pixel_benchmark.py @reports --output benchmark-results/caviar/comparison.json
+      - name: Enforce separate real-CAVIAR quality gate before promotion
+        run: python scripts/gate_pixel_benchmark.py benchmark-results/caviar/comparison.json --max-recall-drop 0.05
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PeopleOverlay_v20_real_CAVIAR_video_CVML_validation
+          path: |
+            benchmark-results/caviar/
+            _caviar_fixture/SOURCE-CAVIAR.json
+          retention-days: 90
