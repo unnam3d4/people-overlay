@@ -49,7 +49,7 @@ func movementScore(before,after []uint8)float64{
  changed:=0
  for i,v:=range after{
   d:=int(v)-int(before[i])
-  if d<-18||d>18{changed++}
+  if d < -18||d>18{changed++}
  }
  fraction:=float64(changed)/float64(len(after))
  // Small moving silhouettes may occupy only a few samples.
