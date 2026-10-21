@@ -324,7 +324,15 @@ func runBenchmarkCLI(args []string) error {
 					applied := benchmarkMS(now.Sub(origin))
 					result.AppliedMS = &applied
 					zone := regs[result.RegionIndex]
-					sch.markScannedPeople(result.RegionIndex, now, result.Detections)
+					// The shared benchmark harness must also compile unchanged v1.9
+                    // scheduler code, which has no ownership-aware method.
+                    if owner, ok := interface{}(&sch).(interface {
+                        markScannedPeople(int, time.Time, []Rect)
+                    }); ok {
+                        owner.markScannedPeople(result.RegionIndex, now, result.Detections)
+                    } else {
+                        sch.markScanned(result.RegionIndex, now, len(result.Detections)>0)
+                    }
 					if hasAware {
 						aware.observePeopleFromCapture(result.Detections, pendingViews, pendingPixels, zone, pendingAt, now)
 					} else {
