@@ -11,7 +11,7 @@ XML = b"""<annotations>
 
 class TestRealPointReplay(unittest.TestCase):
     def test_only_visible_annotated_face_points(self):
-        v = face_points_from_cvat(XML)
+        v = face_points_from_cvat(XML, require_real_length=False)
         self.assertEqual(v[0], [{"id":"track4","x":70.,"y":20.}])
         self.assertEqual(v[1][0]["x"],72.)
         self.assertNotIn(2, v)
