@@ -105,6 +105,8 @@ var sensitivity atomic.Int32
 var contrastMode atomic.Bool
 var captureRequested atomic.Bool
 var showNumbers atomic.Bool
+var lastInferenceMS atomic.Int64
+var trackedCount atomic.Int32
 var testOnly atomic.Bool
 var colour atomic.Int32
 var stopped atomic.Bool
