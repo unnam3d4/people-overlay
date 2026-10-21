@@ -190,7 +190,7 @@ func recheckTTL(regions int,profile int32,busy time.Duration)time.Duration{
  if busy<=0{busy=350*time.Millisecond}
  cycle:=time.Duration(regions)*(busy+throttleFor(profile,busy))
  ttl:=cycle+cycle/3
- if ttl<7*time.Second{ttl=7*time.Second}
+ if ttl<9*time.Second{ttl=9*time.Second}
  if ttl>16*time.Second{ttl=16*time.Second}
  return ttl
 }
