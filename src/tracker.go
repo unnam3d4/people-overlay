@@ -18,6 +18,7 @@ type personTrack struct {
  ID int
  LastAI time.Time
  LastMotion time.Time
+ Tile int
 }
 
 type personTracker struct {
@@ -25,11 +26,24 @@ type personTracker struct {
  nextID int
  prevGray []byte
  grayW,grayH int
+ screenW,screenH int
+ columns int
 }
 
 const trackingDownscale=4
 const maxTrackedPeople=48
 
+func (t *personTracker)layout(w,h int,cols int){
+ t.screenW,t.screenH,t.columns=w,h,cols
+}
+func (t *personTracker)tileOf(r Rect)int{
+ if t.screenW<1||t.screenH<1||t.columns<2{return 0}
+ x:=int((r.X+r.W*.5)*float64(t.columns)/float64(t.screenW))
+ y:=int((r.Y+r.H*.5)*float64(t.columns)/float64(t.screenH))
+ if x<0{x=0};if y<0{y=0}
+ if x>=t.columns{x=t.columns-1};if y>=t.columns{y=t.columns-1}
+ return y*t.columns+x+1
+}
 func (t *personTracker)reset(){
  t.people=nil
  t.prevGray=nil
@@ -124,11 +138,14 @@ func(t *personTracker)step(pixels []byte,w,h int,now time.Time){
   dx,dy,good:=motionShift(t.prevGray,gray,gw,gh,p.Box)
   if !good{continue}
   if math.Abs(dx)+math.Abs(dy)>=4 {
-   p.Box.X+=dx
-   p.Box.Y+=dy
-   p.Box.X=math.Max(0,math.Min(float64(w)-p.Box.W,p.Box.X))
-   p.Box.Y=math.Max(0,math.Min(float64(h)-p.Box.H,p.Box.Y))
-   p.LastMotion=now
+   next:=p.Box
+   next.X=math.Max(0,math.Min(float64(w)-p.Box.W,p.Box.X+dx))
+   next.Y=math.Max(0,math.Min(float64(h)-p.Box.H,p.Box.Y+dy))
+   // In CCTV 4x4 mode, a track must not hop into another camera tile.
+   if p.Tile==0||t.tileOf(next)==p.Tile{
+    p.Box=next
+    p.LastMotion=now
+   }
   }
  }
  t.prevGray=gray
@@ -143,9 +160,17 @@ func (t *personTracker)observePeople(detections []Rect,at time.Time){
  used:=make([]bool,len(t.people))
  for _,d:=range detections{
   if d.W<=0||d.H<=0{continue}
+  tile:=t.tileOf(d)
+  // A second overlapping tiled crop must not invent a new person ID.
+  duplicate:=false
+  for _,p:=range t.people{
+   if p.Tile==tile&&overlap(d,p.Box)>.68{duplicate=true;break}
+  }
+  // Do not skip overlap matching here: duplicate detection is still useful
+  // for updating the existing track, just never spawn another track.
   best,bestScore:=-1,0.0
   for j,p:=range t.people{
-   if used[j]{continue}
+   if used[j]||p.Tile!=tile{continue}
    iou:=overlap(d,p.Box)
    centerDX:=math.Abs((d.X+d.W*.5)-(p.Box.X+p.Box.W*.5))/math.Max(20,math.Max(d.W,p.Box.W))
    centerDY:=math.Abs((d.Y+d.H*.5)-(p.Box.Y+p.Box.H*.5))/math.Max(20,math.Max(d.H,p.Box.H))
@@ -167,9 +192,9 @@ func (t *personTracker)observePeople(detections []Rect,at time.Time){
    p.Box.Score=d.Score
    p.LastAI=at
    used[best]=true
-  }else if len(t.people)<maxTrackedPeople{
+  }else if !duplicate&&len(t.people)<maxTrackedPeople{
    t.nextID++
-   t.people=append(t.people,personTrack{Box:d,ID:t.nextID,LastAI:at})
+   t.people=append(t.people,personTrack{Box:d,ID:t.nextID,LastAI:at,Tile:tile})
    used=append(used,true)
   }
  }
@@ -196,7 +221,7 @@ func(t *personTracker)views(now time.Time)[]TrackView{
  for _,p:=range t.people{
   duplicate:=-1
   for i,v:=range views{
-   if overlap(p.Box,v.Box)>.65{duplicate=i;break}
+   if overlap(p.Box,v.Box)>.5{duplicate=i;break}
   }
   if duplicate>=0{
    if p.LastAI.After(ages[duplicate]){
