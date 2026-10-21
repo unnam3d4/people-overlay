@@ -18,9 +18,16 @@ type benchmarkPerson struct {
 	ID  string `json:"id"`
 	Box Rect   `json:"box"`
 }
+type benchmarkLandmark struct {
+    ID string `json:"id"`
+    X float64 `json:"x"`
+    Y float64 `json:"y"`
+}
 type benchmarkFrame struct {
 	File   string            `json:"file"`
 	People []benchmarkPerson `json:"people"`
+    // Optional manually labelled head landmarks: not full-body bbox GT.
+    Landmarks []benchmarkLandmark `json:"landmarks,omitempty"`
 	Label  string            `json:"label,omitempty"`
 }
 type benchmarkManifest struct {
@@ -56,6 +63,7 @@ type benchmarkObservation struct {
 	File        string            `json:"file"`
 	Label       string            `json:"label,omitempty"`
 	People      []benchmarkPerson `json:"people"`
+    Landmarks []benchmarkLandmark `json:"landmarks,omitempty"`
 	Tracks      []TrackView       `json:"tracks"`
 	Captured    bool              `json:"captured"`
 	SceneReset  bool              `json:"scene_reset,omitempty"`
@@ -260,7 +268,7 @@ func runBenchmarkCLI(args []string) error {
 	lastBusy := 350 * time.Millisecond
 	for i, frame := range manifest.Frames {
 		now := origin.Add(time.Duration(float64(i) * float64(time.Second) / float64(manifest.FPS)))
-		obs := benchmarkObservation{Frame: i, TimestampMS: benchmarkMS(now.Sub(origin)), File: frame.File, Label: frame.Label, People: frame.People}
+		obs := benchmarkObservation{Frame: i, TimestampMS: benchmarkMS(now.Sub(origin)), File: frame.File, Label: frame.Label, People: frame.People, Landmarks: frame.Landmarks}
 		if i == 0 || !now.Before(nextCapture) {
 			obs.Captured = true
 			begun := time.Now()
