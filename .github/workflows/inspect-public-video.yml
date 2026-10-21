@@ -52,5 +52,27 @@ jobs:
             print('DOWNLOAD/INSPECT FAILED:',type(e).__name__,str(e),flush=True)
             raise
           PY
-      - name: Probe footage metadata
-        run: ffprobe -v error -show_entries stream=width,height,r_frame_rate,duration -of json _public_video/source_raw_video.mp4
+      - name: Inspect video and person-keypoint grouping
+        run: |
+          python -m pip install opencv-python-headless==4.11.0.86 numpy==2.2.6
+          python - <<'PY'
+          import cv2, zipfile,io,urllib.request,xml.etree.ElementTree as ET,collections
+          cap=cv2.VideoCapture('_public_video/source_raw_video.mp4')
+          print('VIDEO',{'fps':cap.get(cv2.CAP_PROP_FPS),'frames':cap.get(cv2.CAP_PROP_FRAME_COUNT),'w':cap.get(3),'h':cap.get(4),'opened':cap.isOpened()})
+          u='https://raw.githubusercontent.com/razayaseen5/Multi-Target-Pedestrian-Pose-CVAT-Video-Dataset/main/Exported_Annotations/CVAT_Video_Head_and_Body_Keypoints_Interpolation.zip'
+          raw=urllib.request.urlopen(u,timeout=40).read()
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+           root=ET.fromstring(z.read('annotations.xml'))
+          labels=collections.Counter(); groups=collections.defaultdict(set); frames=collections.Counter()
+          for track in root.findall('track'):
+           label=track.get('label')
+           group=track.get('group_id','?')
+           labels[label]+=1
+           groups[group].add(label)
+           for pts in track.findall('points'):
+            if pts.get('outside')!='1':frames[int(pts.get('frame'))]+=1
+          print('NUM_TRACKS',sum(labels.values()))
+          print('LABELS_TOP20',labels.most_common(20))
+          print('GROUPS',[(k,len(v),sorted(v)[:9]) for k,v in list(groups.items())[:15]])
+          print('ANNOTATED_FRAMES',len(frames),'SAMPLE',sorted(frames.items())[:12])
+          PY
