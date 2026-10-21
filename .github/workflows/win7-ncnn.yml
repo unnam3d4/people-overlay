@@ -1,8 +1,8 @@
-name: v1.3 CCTV sound and smooth tracking QA
+name: v1.4 CCTV responsive AI and sound QA
 
 on:
   push:
-    branches: [feature/cctv-alarm-v13]
+    branches: [feature/cctv-smooth-v14]
   workflow_dispatch:
 
 permissions:
@@ -78,6 +78,6 @@ jobs:
       - name: Publish verified portable EXEs
         uses: actions/upload-artifact@v4
         with:
-          name: PeopleOverlay_v1.3_Alarm_CCTV_Win7to11
+          name: PeopleOverlay_v1.4_Smooth_CCTV_Alarm_Win7to11
           path: DIST/*.exe
           retention-days: 30
