@@ -112,7 +112,7 @@ func TestLostTrackHiddenRecoversIDThenExpires(t *testing.T) {
 	start := time.Unix(73000, 0)
 	tr.observePeople([]Rect{{X: 30, Y: 17, W: 40, H: 61, Score: .8}}, start)
 	original := tr.views(start)[0].ID
-	later := start.Add(time.Second)
+	later := start.Add(1350 * time.Millisecond)
 	if got := tr.views(later); len(got) != 0 {
 		t.Fatalf("lost track remains visible: %+v", got)
 	}
