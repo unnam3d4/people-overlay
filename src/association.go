@@ -36,6 +36,9 @@ func sameSilhouette(a,b Rect) bool {
 
 func trackMatchScore(p personTrack,d Rect,cell int,at time.Time)float64 {
  if d.W<=0||d.H<=0||p.Box.W<=0||p.Box.H<=0{return 0}
+ // Camera mosaics are independent video streams. Do not transfer a track
+ // to another cell, even if boxes happen to overlap across tile borders.
+ if p.Tile>0&&cell>0&&p.Tile!=cell{return 0}
  if nestedROISubject(d,p.Box){return 88}
  wRatio:=math.Min(d.W,p.Box.W)/math.Max(d.W,p.Box.W)
  hRatio:=math.Min(d.H,p.Box.H)/math.Max(d.H,p.Box.H)
@@ -174,6 +177,7 @@ func (t *personTracker)assignDetections(found []Rect,at time.Time){
   if used[j]||len(t.people)>=maxTrackedPeople{continue}
   duplicate:=false
   for _,p:=range t.people{
+   if p.Tile>0&&t.tileOf(d)>0&&p.Tile!=t.tileOf(d){continue}
    if sameROISubject(d,p.Box){duplicate=true;break}
   }
   if duplicate{continue}
@@ -193,6 +197,7 @@ func (t *personTracker)reconcileROISubjects(now time.Time){
  for i:=0;i<len(t.people);i++{
   for j:=i+1;j<len(t.people);{
    a,b:=t.people[i],t.people[j]
+   if a.Tile>0&&b.Tile>0&&a.Tile!=b.Tile{j++;continue}
    if !sameROISubject(a.Box,b.Box){j++;continue}
    // Avoid erroneously joining two known, similarly sized people merely
    // crossing: nested case is strict, near-identical case needs stable IDs
