@@ -29,7 +29,7 @@ func decodePeople(out []float32,n,fullW,fullH int,scale,padX,padY float64,thresh
   y1:=maxF(0,minF((cy-h/2-padY)/scale,float64(fullH)))
   x2:=maxF(0,minF((cx+w/2-padX)/scale,float64(fullW)))
   y2:=maxF(0,minF((cy+h/2-padY)/scale,float64(fullH)))
-  if x2-x1<10||y2-y1<14{continue}
+  if x2-x1<6||y2-y1<9{continue}
   cand=append(cand,Rect{X:x1,Y:y1,W:x2-x1,H:y2-y1,Score:sc})
  }
  return suppressRects(cand,.45,80)
