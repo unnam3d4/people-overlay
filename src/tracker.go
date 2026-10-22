@@ -458,6 +458,17 @@ func (t *personTracker) step(pixels []byte, w, h int, now time.Time) {
 			p.Anchor, p.AnchorValid = sampleAnchor(t.prevGray, gw, gh, p.Box)
 		}
 		dx, dy, good := motionShift(t.prevGray, gray, gw, gh, p.Box)
+        // Four independently agreeing high-contrast body patches may track
+        // a person even when the single large block is ambiguous. This is
+        // sparse local patch motion, NOT untested pyramidal Lucas-Kanade.
+        // The final AI-anchor test below must STILL approve the candidate
+        // before updating its visual lifetime, so scene motion/noise cannot
+        // create or preserve a false person.
+        if !good && p.AnchorValid {
+            if fx,fy,ok:=sparsePersonFlow(t.prevGray,gray,gw,gh,p.Box);ok {
+                dx,dy,good=fx,fy,true
+            }
+        }
         // An apparently stationary block is not necessarily a stationary
         // person: resolve sub-block movement using AI-verified texture.
         if p.AnchorValid && good && dx==0 && dy==0 {
