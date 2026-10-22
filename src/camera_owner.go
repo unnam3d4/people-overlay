@@ -37,21 +37,3 @@ func v3KeepCameraDetections(boxes []Rect, regionIdx int, w,h int,profile int32) 
     }
     return filtered
 }
-
-func v3OwnerTileViewport(box Rect,view scanRegion,columns int)int{
- if columns<2||view.w<1||view.h<1||box.W<=0||box.H<=0{return 0}
- cx:=box.X+box.W*.5
- cy:=box.Y+box.H*.5
- if cx<float64(view.x)||cy<float64(view.y)||
-    cx>=float64(view.x+view.w)||cy>=float64(view.y+view.h){return 0}
- return v3OwnerTile(Rect{X:box.X-float64(view.x),Y:box.Y-float64(view.y),W:box.W,H:box.H},view.w,view.h,columns)
-}
-
-func v3KeepCameraDetectionsViewport(boxes []Rect,index,columns int,view scanRegion)[]Rect{
- if index==0||columns<2 {return boxes}
- result:=make([]Rect,0,len(boxes))
- for _,b:=range boxes{
-  if v3OwnerTileViewport(b,view,columns)==index{result=append(result,b)}
- }
- return result
-}
