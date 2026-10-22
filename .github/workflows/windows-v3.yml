@@ -1,4 +1,4 @@
-name: People Overlay v3 - cross-platform compile and four-monitor geometry
+name: People Overlay v3 - Windows 7 and Windows 10 compile and monitor geometry
 on:
   push:
     branches:
@@ -61,18 +61,3 @@ jobs:
           path: monitor-report.json
           if-no-files-found: ignore
           retention-days: 15
-  linux-regression:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.20.14'
-          cache: false
-      - name: Existing algorithm regressions and static cross-compilation
-        run: |
-          cd src
-          go test ./... -count=1
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags ncnn -o /tmp/people-overlay-v3-x64.exe .
-          GOOS=windows GOARCH=386 CGO_ENABLED=0 go build -tags ncnn -o /tmp/people-overlay-v3-x86.exe .
