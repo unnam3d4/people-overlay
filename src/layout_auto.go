@@ -63,43 +63,16 @@ func v3SeamScore(p []byte,w,h,grid int,vertical bool) float64 {
     return float64(matched)/float64(grid-1)
 }
 
-// Auto returns BOTH grid size and the estimated video viewport. A windowed
-// RVi/SmartPSS mosaic must not be scanned as four equal desktop quarters:
-// that cuts human silhouettes in the wrong places behind its sidebar.
-func v3RecognizeLayoutGeometry(p []byte,w,h int)(int32,scanRegion){
-    full:=scanRegion{0,0,w,h}
-    if w<320||h<240||len(p)<w*h*4{return 0,full}
-    for _,grid:=range []int{4,3,2}{
+// Detection requires both vertical and horizontal boundaries. Full-screen
+// landscapes, fences, doors and ordinary image edges cannot trip it via
+// a vertical split alone. In ambiguous cases prefer the fullscreen profile;
+// the tray still permits manual layouts.
+func v3RecognizeLayout(p []byte,w,h int) int32 {
+    if w<320 || h<240 || len(p)<w*h*4 {return 0}
+    for _,grid:=range []int{4,3,2} {
         vertical:=v3SeamScore(p,w,h,grid,true)
         horizontal:=v3SeamScore(p,w,h,grid,false)
-        if vertical>=.85 && horizontal>=.85{
-            return int32(grid-1),full
-        }
-        left,top:=0,0
-        pitchX,pitchY:=w/grid,h/grid
-        if vertical<.85 {
-            var sx int
-            vertical,left,sx=v3WindowedSeamGeometry(p,w,h,grid,true)
-            pitchX=sx
-        }
-        if horizontal<.85 {
-            var sy int
-            horizontal,top,sy=v3WindowedSeamGeometry(p,w,h,grid,false)
-            pitchY=sy
-        }
-        if vertical<.85||horizontal<.85||pitchX<48||pitchY<48{continue}
-        // Bounded by the captured display. No viewport crop may leak into
-        // the next monitor or exceed the source DIB.
-        width,height:=grid*pitchX,grid*pitchY
-        if left+width>w {width=w-left}
-        if top+height>h {height=h-top}
-        if width<w/3 || height<h/3 || left<0 || top<0 {continue}
-        return int32(grid-1),scanRegion{left,top,width,height}
+        if vertical>=.85 && horizontal>=.85{return map[int]int32{2:1,3:2,4:3}[grid]}
     }
-    return 0,full
-}
-
-func v3RecognizeLayout(p []byte,w,h int) int32 {
-    profile,_:=v3RecognizeLayoutGeometry(p,w,h)
-    return profile
+    return 0
 }
