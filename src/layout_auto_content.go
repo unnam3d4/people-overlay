@@ -28,7 +28,15 @@ func v3WindowedSeamGeometry(p []byte,w,h,grid int,vertical bool) (float64,int,in
     maxPitch:=length/grid+stepPitch
     maxOrigin:=length/4
     best:=0.
+    bestQuality:=-1.
     bestOrigin,bestPitch:=0,0
+    boundaryStrength:=func(pos int)float64{
+        val:=0.
+        for dx:=-7;dx<=7;dx+=2 {
+            if edge:=strength(pos+dx);edge>val{val=edge}
+        }
+        return math.Min(1,val/36)
+    }
     for origin:=0;origin<=maxOrigin;origin+=stepOrigin {
         for pitch:=minPitch;pitch<=maxPitch;pitch+=stepPitch {
             if pitch<42||origin+grid*pitch>length+stepPitch {continue}
@@ -55,9 +63,21 @@ func v3WindowedSeamGeometry(p []byte,w,h,grid int,vertical bool) (float64,int,in
             if matched==grid-1 {
                 score:=float64(matched)/float64(grid-1)
                 // Reject extremely weak seams that coincidentally align.
-                if totalStrength/float64(grid-1)>.45 && score>best {
-                    best=score
-                    bestOrigin,bestPitch=origin,pitch
+                if totalStrength/float64(grid-1)>.45 {
+                    // Interior seams alone underdetermine the crop of a
+                    // 2x2 mosaic (only ONE seam per axis). Prefer the
+                    // candidate whose estimated outer edges align with the
+                    // VMS video-viewport border. Do not *require* a border:
+                    // borderless camera clients remain supported.
+                    leftEdge:=boundaryStrength(origin)
+                    rightEdge:=boundaryStrength(origin+grid*pitch)
+                    quality:=totalStrength/float64(grid-1)+
+                        .40*(leftEdge+rightEdge)
+                    if quality>bestQuality {
+                        bestQuality=quality
+                        best=score
+                        bestOrigin,bestPitch=origin,pitch
+                    }
                 }
             }
         }
