@@ -13,6 +13,7 @@ type inferenceRequest struct {
 	pixels     []byte
 	contrast   bool
 	zone       scanRegion
+	display    int // 0-based physical monitor; default zero for v20 benchmark harness
 	epoch      uint64
 	captured   []TrackView
 	capturedAt time.Time
@@ -22,6 +23,7 @@ type inferenceReply struct {
 	pixels     []byte
 	detected   []Rect
 	zone       scanRegion
+	display    int // 0-based physical monitor; default zero for v20 benchmark harness
 	epoch      uint64
 	captured   []TrackView
 	capturedAt time.Time
@@ -70,7 +72,7 @@ func inferenceWorker(detector *Detector, requests <-chan inferenceRequest, repli
 				}
 			}
 			lastDecodeUS.Store(time.Since(decodeStart).Microseconds())
-			result := inferenceReply{pixels: req.pixels, detected: found, zone: req.zone, epoch: req.epoch, captured: req.captured, capturedAt: req.capturedAt, duration: time.Since(begun), err: err}
+			result := inferenceReply{pixels: req.pixels, detected: found, zone: req.zone, display: req.display, epoch: req.epoch, captured: req.captured, capturedAt: req.capturedAt, duration: time.Since(begun), err: err}
 			// One result slot suffices because requests are unbuffered and producer
 			// deliberately never queues stale camera images.
 			select {
