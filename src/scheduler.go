@@ -20,6 +20,7 @@ type scanScheduler struct {
     coreActivity []float64
 	previousProfile int32
 	width, height   int
+    viewport scanRegion
 	lastFull        time.Time
 	firstDecision   time.Time
     decisionCount uint64
@@ -37,6 +38,7 @@ func (s *scanScheduler) reset(regions int, w, h int, profile int32) {
 	s.previousProfile = profile
 	s.width = w
 	s.height = h
+    s.viewport=scanRegion{0,0,w,h}
 	// On CCTV mosaic a full-screen AI pass makes people tiny and wastes
 	// several seconds on older processors. Start directly with camera crops.
 	s.lastFull = time.Time{}
@@ -46,6 +48,11 @@ func (s *scanScheduler) reset(regions int, w, h int, profile int32) {
 	if profile == 3 {
 		s.lastFull = time.Now()
 	}
+}
+
+func (s *scanScheduler) setViewport(v scanRegion){
+ if v.w>0&&v.h>0&&v.x>=0&&v.y>=0&&
+    v.x+v.w<=s.width&&v.y+v.h<=s.height{s.viewport=v}
 }
 
 // A 32x24 signature covers small CCTV figures that disappear entirely in
@@ -109,8 +116,10 @@ func (s *scanScheduler) observe(frame []byte, w, h int, regions []scanRegion) bo
 		s.fingerprint[i] = cur
         if s.previousProfile == 3 && len(regions)==17 && i < 17 && i < len(s.coreFingerprint) {
             col,row:=(i-1)%4,(i-1)/4
-            x1,x2:=col*w/4,(col+1)*w/4
-            y1,y2:=row*h/4,(row+1)*h/4
+            v:=s.viewport
+            if v.w<1||v.h<1{v=scanRegion{0,0,w,h}}
+            x1,x2:=v.x+col*v.w/4,v.x+(col+1)*v.w/4
+            y1,y2:=v.y+row*v.h/4,v.y+(row+1)*v.h/4
             core:=tinySignature(frame,w,h,scanRegion{x1,y1,x2-x1,y2-y1})
             if s.coreFingerprint[i]!=nil {
                 amount:=movementScore(s.coreFingerprint[i],core)
@@ -200,7 +209,9 @@ func (s *scanScheduler) nextFullDetail(now time.Time) int {
 func (s *scanScheduler) filterCameraDetections(index int, people []Rect) []Rect {
     cols:=v3GridColumns(s.previousProfile)
     if cols==0 || len(s.lastScan)!=cols*cols+1{return people}
-    return v3KeepCameraDetections(people,index,s.width,s.height,s.previousProfile)
+    v:=s.viewport
+    if v.w<1||v.h<1{v=scanRegion{0,0,s.width,s.height}}
+    return v3KeepCameraDetectionsViewport(people,index,cols,v)
 }
 
 // firstVisitRegion returns the most promising camera never checked since
@@ -251,22 +262,16 @@ func (s *scanScheduler) ensureFirstCoverage(profile int32, regions []scanRegion,
 // This changes ONLY scheduling, never suppresses output detections or assumes
 // the physical RVi video pane is perfectly aligned with our nominal grid.
 func (s *scanScheduler) scanOwner(box Rect) int {
-    if s.previousProfile != 3 || s.width <= 0 || s.height <= 0 || box.W <= 0 || box.H <= 0 {
-        return 0
-    }
-    cx, cy := box.X + box.W*.5, box.Y + box.H*.5
-    if cx < 0 || cy < 0 || cx >= float64(s.width) || cy >= float64(s.height) {
-        return 0
-    }
-    col := int(cx * 4 / float64(s.width))
-    row := int(cy * 4 / float64(s.height))
-    if col < 0 || col > 3 || row < 0 || row > 3 {return 0}
-    // The optional two-vertically-stacked-camera research layout contains
-    // eight crops: grouped rows 0+1 and 2+3, four columns each.
-    // Keep box ownership aligned with those crops without changing
-    // normal 16-camera behavior.
-    if len(s.lastScan)==9 {return (row/2)*4+col+1}
-    return row * 4 + col + 1
+ if s.previousProfile!=3||s.width<=0||s.height<=0{return 0}
+ v:=s.viewport
+ if v.w<1||v.h<1{v=scanRegion{0,0,s.width,s.height}}
+ tile:=v3OwnerTileViewport(box,v,4)
+ if tile==0{return 0}
+ if len(s.lastScan)==9 {
+  row,col:=(tile-1)/4,(tile-1)%4
+  return (row/2)*4+col+1
+ }
+ return tile
 }
 
 // markScannedPeople only marks a CAMERA positive when at least one NN box
