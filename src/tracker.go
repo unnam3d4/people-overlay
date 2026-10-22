@@ -52,7 +52,6 @@ type personTracker struct {
 	grayW, grayH         int
 	grayAt               time.Time
 	screenW, screenH     int
-    viewport             scanRegion
 	columns              int
 	maxAIAge             time.Duration
 	confirmationRequired bool
@@ -95,20 +94,28 @@ const trackingDownscale = 2
 const maxTrackedPeople = 48
 
 func (t *personTracker) layout(w, h, cols int) {
- t.screenW,t.screenH,t.columns=w,h,cols
- t.viewport=scanRegion{0,0,w,h}
-}
-func (t *personTracker) setViewport(v scanRegion){
- if v.w>0 && v.h>0 && v.x>=0 && v.y>=0 &&
-   v.x+v.w<=t.screenW && v.y+v.h<=t.screenH {t.viewport=v}
+	t.screenW, t.screenH, t.columns = w, h, cols
 }
 func (t *personTracker) tileOf(r Rect) int {
- if t.columns<2 || t.screenW<1 || t.screenH<1 {return 0}
- v:=t.viewport
- if v.w==0||v.h==0{v=scanRegion{0,0,t.screenW,t.screenH}}
- return v3OwnerTileViewport(r,v,t.columns)
+	if t.screenW < 1 || t.screenH < 1 || t.columns < 2 {
+		return 0
+	}
+	x := int((r.X + r.W*.5) * float64(t.columns) / float64(t.screenW))
+	y := int((r.Y + r.H*.5) * float64(t.columns) / float64(t.screenH))
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+	if x >= t.columns {
+		x = t.columns - 1
+	}
+	if y >= t.columns {
+		y = t.columns - 1
+	}
+	return y*t.columns + x + 1
 }
-
 func (t *personTracker) reset() {
 	t.people = nil
 	t.prevGray = nil
@@ -457,22 +464,6 @@ func (t *personTracker) step(pixels []byte, w, h int, now time.Time) {
 			p.Anchor, p.AnchorValid = sampleAnchor(t.prevGray, gw, gh, p.Box)
 		}
 		dx, dy, good := motionShift(t.prevGray, gray, gw, gh, p.Box)
-        // The existing sparse optical-flow matcher wasn't connected to the
-        // live tracker. A small moving person can look motionless to the
-        // 63-point block matcher, leaving four corners trailing behind.
-        // Run it only on a failed/zero displacement, then demand agreement
-        // with the person's AI-anchored texture on the CURRENT screen.
-        // Never use velocity alone as positive evidence or retarget a ghost.
-        if p.AnchorValid && (!good || (dx==0 && dy==0)) {
-            if sx,sy,flowOK:=sparsePersonFlow(t.prevGray,gray,gw,gh,p.Box); flowOK && (sx!=0||sy!=0) {
-                candidate:=p.Box
-                candidate.X+=sx
-                candidate.Y+=sy
-                if patch,ok:=sampleAnchor(gray,gw,gh,candidate);ok&&anchorStillPresent(p.Anchor,patch) {
-                    dx,dy,good=sx,sy,true
-                }
-            }
-        }
         // An apparently stationary block is not necessarily a stationary
         // person: resolve sub-block movement using AI-verified texture.
         if p.AnchorValid && good && dx==0 && dy==0 {
@@ -843,74 +834,35 @@ func (t *personTracker) drawableTrack(p personTrack, now time.Time) bool {
         now.Sub(p.LastVisual)<=200*time.Millisecond
 }
 
-// Detect the specific overlay regression in which an old marker is left
-// behind after the tracker loses a moving human and the next neural scan
-// creates a new ID. The older track is still useful internally for re-ID,
-// but showing both on the same silhouette creates the reported "pile of
-// corners". Only screen presentation is deduplicated; distinct tracked
-// identities, neural evidence and camera scheduling remain untouched.
-func displayDuplicateTracks(a,b personTrack, now time.Time) bool {
-    if a.Tile>0 && b.Tile>0 && a.Tile!=b.Tile {return false}
-    // A near-identical AI silhouette should never be rendered twice.
-    if sameSilhouette(a.Box,b.Box) {return true}
-    // Two people may overlap partially. A loose geometry check is only
-    // allowed when one track has clearly older NN evidence and the newer
-    // box is recent; simultaneous detections must remain independent.
-    older,newer:=a,b
-    if a.LastAI.After(b.LastAI) {older,newer=b,a}
-    if older.LastAI.IsZero()||newer.LastAI.IsZero(){return false}
-    oldAge:=now.Sub(older.LastAI)
-    newAge:=now.Sub(newer.LastAI)
-    if newAge<0||newAge>1250*time.Millisecond ||
-       oldAge-newAge<350*time.Millisecond {return false}
-    // Both established human tracks get extra protection against accidental
-    // merging during temporary occlusion/crowds. Truly stale old AI evidence
-    // can still be hidden if a new overlapping silhouette is positively seen.
-    if older.AIHits>=2 && newer.AIHits>=2 && oldAge<1700*time.Millisecond {
-        return false
-    }
-    aBox,bBox:=older.Box,newer.Box
-    wr:=math.Min(aBox.W,bBox.W)/math.Max(aBox.W,bBox.W)
-    hr:=math.Min(aBox.H,bBox.H)/math.Max(aBox.H,bBox.H)
-    if wr<.62||hr<.64{return false}
-    distance:=centerSeparation(aBox,bBox)
-    iou:=overlap(aBox,bBox)
-    coverage:=coveringFraction(aBox,bBox)
-    // Several strong YOLO crops can give ONE moving pedestrian 3 IDs
-    // 500-800 ms apart. Do not leave the middle ID floating between the
-    // old and newly confirmed box. This recent-case gate is intentionally
-    // tighter and applies only to a tentative/recently born duplicate.
-    if oldAge<900*time.Millisecond {
-        return oldAge>=450*time.Millisecond &&
-            (older.AIHits<2||newer.AIHits<2) &&
-            distance<=.52 && iou>=.30 && coverage>=.50
-    }
-    return distance<=.68 && iou>=.20 && coverage>=.42
-}
-
 func (t *personTracker) views(now time.Time) []TrackView {
     t.prune(now)
-    // Keep whole track records while deciding visibility; a rendered ID
-    // and box alone cannot tell a recently confirmed person from a ghost.
-    selected:=make([]personTrack,0,len(t.people))
+    views:=make([]TrackView,0,len(t.people))
     for _,p:=range t.people {
-        if !t.drawableTrack(p,now) {continue}
-        match:=-1
-        for i:=range selected {
-            if t.confirmationRequired && displayDuplicateTracks(selected[i],p,now) {
-                match=i
+        if !t.drawableTrack(p,now){continue}
+        // Strict display-only suppression: asynchronous camera crops can
+        // produce a new track before the earlier ID has aged out. Suppress
+        // nearly identical silhouettes, keeping whichever has newer AI
+        // evidence. Do NOT mutate underlying tracking identity and never
+        // merge generally overlapping humans.
+        duplicate:=-1
+        for i,v:=range views {
+            if t.confirmationRequired && sameSilhouette(v.Box,p.Box) {
+                duplicate=i
                 break
             }
         }
-        if match<0 {
-            selected=append(selected,p)
-        }else if p.LastAI.After(selected[match].LastAI) ||
-                  (p.LastAI.Equal(selected[match].LastAI)&&p.AIHits>selected[match].AIHits) {
-            selected[match]=p
+        if duplicate>=0 {
+            existing:=views[duplicate]
+            newer:=false
+            for _,q:=range t.people {
+                if q.ID==existing.ID {
+                    newer=p.LastAI.After(q.LastAI)
+                    break
+                }
+            }
+            if newer {views[duplicate]=TrackView{Box:p.Box,ID:p.ID}}
+            continue
         }
-    }
-    views:=make([]TrackView,0,len(selected))
-    for _,p:=range selected {
         views=append(views,TrackView{Box:p.Box,ID:p.ID})
     }
     return views
