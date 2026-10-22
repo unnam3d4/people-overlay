@@ -464,6 +464,22 @@ func (t *personTracker) step(pixels []byte, w, h int, now time.Time) {
 			p.Anchor, p.AnchorValid = sampleAnchor(t.prevGray, gw, gh, p.Box)
 		}
 		dx, dy, good := motionShift(t.prevGray, gray, gw, gh, p.Box)
+        // The existing sparse optical-flow matcher wasn't connected to the
+        // live tracker. A small moving person can look motionless to the
+        // 63-point block matcher, leaving four corners trailing behind.
+        // Run it only on a failed/zero displacement, then demand agreement
+        // with the person's AI-anchored texture on the CURRENT screen.
+        // Never use velocity alone as positive evidence or retarget a ghost.
+        if p.AnchorValid && (!good || (dx==0 && dy==0)) {
+            if sx,sy,flowOK:=sparsePersonFlow(t.prevGray,gray,gw,gh,p.Box); flowOK && (sx!=0||sy!=0) {
+                candidate:=p.Box
+                candidate.X+=sx
+                candidate.Y+=sy
+                if patch,ok:=sampleAnchor(gray,gw,gh,candidate);ok&&anchorStillPresent(p.Anchor,patch) {
+                    dx,dy,good=sx,sy,true
+                }
+            }
+        }
         // An apparently stationary block is not necessarily a stationary
         // person: resolve sub-block movement using AI-verified texture.
         if p.AnchorValid && good && dx==0 && dy==0 {
