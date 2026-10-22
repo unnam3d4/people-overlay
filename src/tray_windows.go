@@ -302,11 +302,26 @@ func (t *appTray) popupMenu() {
 	appendMenu(menu, menuIDRed, "Цвет: красный", colour.Load() == 2)
 	appendMenu(menu, menuIDOrange, "Цвет: оранжевый", colour.Load() == 3)
 	separator(menu)
+    // This is a property of the Windows screen grab, never a proof that
+    // the video application itself decodes successfully or a person was found.
+    if v3CapturePreviewReady.Load() {
+        caption:=fmt.Sprintf("Захват экрана: яркость %d/255 | чёрных пикселей %d%% | диапазон %d",
+            v3CapturePreviewMean.Load(),v3CapturePreviewBlack.Load(),v3CapturePreviewRange.Load())
+        ptr:=syscall.StringToUTF16Ptr(caption)
+        trayAppendMenu.Call(menu,menuString|1,0,uintptr(unsafe.Pointer(ptr)))
+        if v3CapturePreviewSuspect.Load(){
+            warn:=syscall.StringToUTF16Ptr("ВНИМАНИЕ: почти чёрный кадр — проверь захват видео")
+            trayAppendMenu.Call(menu,menuString|1,0,uintptr(unsafe.Pointer(warn)))
+        }
+    } else {
+        pending:=syscall.StringToUTF16Ptr("Захват экрана: кадр ещё не проверен")
+        trayAppendMenu.Call(menu,menuString|1,0,uintptr(unsafe.Pointer(pending)))
+    }
 	appendMenu(menu, menuIDCapture, "Сохранить проверочный кадр", false)
 	appendMenu(menu, menuIDCaptureCompat, "Захват видео: совместимый режим (CAPTUREBLT)", captureCompat.Load())
 	appendMenu(menu, menuIDVideoProbe, "Проверить видеокадры (2 снимка за 1,4 сек)", false)
 	if probeReady.Load() {
-		status := fmt.Sprintf("Тест захвата: %d%% изменившихся пикселей", captureProbePercent.Load())
+        status := fmt.Sprintf("Тест захвата: %d%% изменилось (0%% не доказывает поломку)", captureProbePercent.Load())
 		caption := syscall.StringToUTF16Ptr(status)
 		trayAppendMenu.Call(menu, menuString|1, 0, uintptr(unsafe.Pointer(caption)))
 	}
@@ -348,6 +363,7 @@ func (t *appTray) action(id uintptr) {
             // This is diagnostic-only; do not invalidate running detection
             // on any of the four physical screens.
             probeReady.Store(false)
+            v3CapturePreviewReady.Store(false)
             logError(fmt.Errorf("Diagnostic screenshot target switched to monitor %d",index+1))
         }
         return
