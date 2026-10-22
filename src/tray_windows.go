@@ -288,7 +288,7 @@ func (t *appTray) popupMenu() {
 	appendMenu(menu, menuIDSensHigh, "Чувствительность: высокая", sensitivity.Load() == 3)
 	appendMenu(menu, menuIDContrast, "Усилить контраст камер", contrastMode.Load())
 	appendMenu(menu, menuIDFullAccuracy, "Точный полный экран: больше AI-проверок (нагрузка CPU)",v3FullAccuracy.Load())
-    appendMenu(menu, menuIDFastAI, "Быстрое сопровождение: до 15 Гц (больше нагрузка CPU)", fastAI.Load())
+    appendMenu(menu, menuIDFastAI, "Быстрый режим: сопровождение + без пауз AI в сетке 4x4 (больше CPU)", fastAI.Load())
 	separator(menu)
 	appendMenu(menu, menuIDAlarmToggle, "Звуковая тревога (Ctrl+Alt+F7)", alarmEnabled.Load())
 	appendMenu(menu, menuIDAlarmShort, "Сигнал: короткий, 3 импульса", !alarmFull.Load())
