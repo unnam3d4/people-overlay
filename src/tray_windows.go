@@ -46,6 +46,7 @@ const (
 	menuIDAlarmPause60    = 165
 	menuIDAlarmTest       = 166
 	menuIDExit            = 199
+    menuIDMonitorStart   = 200 // 200..215 selected physical monitor
 	wmRButtonUp           = 0x0205
 	wmLButtonUp           = 0x0202
 	wmLButtonDouble       = 0x0203
@@ -255,6 +256,18 @@ func (t *appTray) popupMenu() {
 	appendMenu(menu, menuIDProfileEco, "Режим: экономный (2×2)", scanMode.Load() == 1)
 	appendMenu(menu, menuIDProfileBalanced, "Режим: сбалансированный (3×3)", scanMode.Load() == 2)
 	appendMenu(menu, menuIDProfileCCTV, "Режим: видеонаблюдение (4×4)", scanMode.Load() == 3)
+    separator(menu)
+    // The user chooses which physical screen actually displays RVi.
+    // Do NOT scan the virtual desktop as one huge CCTV mosaic.
+    monitors:=monitorList()
+    if len(monitors)>16 {monitors=monitors[:16]}
+    selection:=displaySelection.Load()
+    for i,m:=range monitors {
+        suffix:=""
+        if m.Primary { suffix=" (основной)" }
+        caption:=fmt.Sprintf("Экран %d%s — %dx%d, x=%d y=%d",i+1,suffix,m.Rect.width(),m.Rect.height(),m.Rect.Left,m.Rect.Top)
+        appendMenu(menu,menuIDMonitorStart+uintptr(i),caption,selection==int32(i))
+    }
 	separator(menu)
 	appendMenu(menu, menuIDSensLow, "Чувствительность: низкая", sensitivity.Load() == 1)
 	appendMenu(menu, menuIDSensNormal, "Чувствительность: обычная", sensitivity.Load() == 2)
@@ -314,6 +327,17 @@ func (t *appTray) popupMenu() {
 	}
 }
 func (t *appTray) action(id uintptr) {
+    if id>=menuIDMonitorStart && id<menuIDMonitorStart+16 {
+        index:=int32(id-menuIDMonitorStart)
+        if index < int32(len(monitorList())) && displaySelection.Load()!=index {
+            displaySelection.Store(index)
+            configurationGeneration.Add(1) // reject in-flight old-display AI
+            version.Add(1) // reposition overlay even for equal-size displays
+            probeReady.Store(false)
+            logError(fmt.Errorf("Capture switched to monitor %d; previous AI tracks invalidated",index+1))
+        }
+        return
+    }
 	defer func() {
 		switch id {
 		case menuIDToggle, menuIDProfileSingle, menuIDProfileEco, menuIDProfileBalanced, menuIDProfileCCTV,
