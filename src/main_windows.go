@@ -546,7 +546,7 @@ func main() {
 	}
 	enabled.Store(true)
 	colour.Store(1)
-	scanMode.Store(3)
+	scanMode.Store(-1) // auto: precise fullscreen first, grid only after confirming boundaries
 	sensitivity.Store(2)
 	alarmEnabled.Store(true)
 	alarmPauseSecs.Store(30)
