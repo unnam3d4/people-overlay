@@ -22,6 +22,18 @@ def make_pair_manifests(root):
         dst=root / f"paired_pets2009_{which}_15fps.json"
         dst.write_text(json.dumps(manifest,separators=(",",":")),encoding="utf-8")
         items.append(dst)
+    # Separate controlled study of temporal box geometry, using the same
+    # two source manifests and independent manual whole-person labels.
+    for which in ("single_less_crowded","single_crowded"):
+        p=root / f"pets2009_{which}_15fps.json"
+        manifest=json.loads(p.read_text(encoding="utf-8"))
+        if manifest["profile"]!=0:raise ValueError("not a fullscreen one-camera fixture")
+        manifest["tight_ai_boxes"]=True
+        manifest["name"]+="_tight_boxes"
+        manifest.setdefault("source",{})["experiment"]="Strong neural body boxes replace stale interpolated tracker outlines"
+        dst=root / f"tight_pets2009_{which}_15fps.json"
+        dst.write_text(json.dumps(manifest,separators=(",",":")),encoding="utf-8")
+        items.append(dst)
     return items
 
 if __name__=="__main__":
