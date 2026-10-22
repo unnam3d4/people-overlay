@@ -1,0 +1,98 @@
+name: Windows 7 10 - fast fullscreen CCTV person accuracy
+on:
+  push:
+    branches: [feature/people-overlay-v3]
+    paths:
+      - '.github/workflows/windows-v3-fast-fullscreen.yml'
+      - 'src/scan.go'
+      - 'src/scheduler.go'
+      - 'src/benchmark_windows.go'
+      - 'scripts/pets_fast_fullscreen.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: fast-fullscreen-accuracy-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  PETS-fullscreen:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Win32 x64 unit tests and build (Windows 7 compatible compiler)
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED='0'
+          $env:GOARCH='amd64'
+          Push-Location src
+          go test -tags ncnn ./... -count=1
+          if ($LASTEXITCODE -ne 0) {throw "Windows Go tests failed"}
+          go build -tags ncnn -trimpath -ldflags '-s -w -H windowsgui' -o ../v3-fullscreen.exe .
+          if ($LASTEXITCODE -ne 0) {throw "Windows Go build failed"}
+          Pop-Location
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 39613297202
+          name: PeopleOverlay_v1.8_Fast_CCTV_PersonLock_Win7
+          github-token: ${{ github.token }}
+          path: BASE8
+      - name: Pack original YOLOv8n for a fair identical EXE test
+        run: python scripts/package_current.py --application v3-fullscreen.exe --donor BASE8/PeopleOverlay_Win7_NCNN_x64.exe --output v3-fullscreen-packed.exe
+      - name: Install only research-side dependencies
+        run: python -m pip install kagglehub pillow==12.1.1 numpy==2.2.6 psutil==7.2.2
+      - name: Download public filmed surveillance scenes with independent body annotations
+        run: python scripts/pets2009_person_body_replay.py --output fixture --fps 15 --duration 7
+      - name: Replay original full-frame only detector on CCTV
+        run: python scripts/run_pixel_benchmarks.py --exe v3v8=v3-fullscreen-packed.exe --fixtures fixture --output results/baseline --scenario single_
+      - name: Derive accelerated fullscreen manifests with unchanged video and body labels
+        run: python scripts/pets_fast_fullscreen.py --fixtures fixture
+      - name: Replay higher-cadence same full-frame AI on same CCTV frames
+        run: python scripts/run_pixel_benchmarks.py --exe v3v8=v3-fullscreen-packed.exe --fixtures fixture --output results/fast --scenario fast_pets2009_
+      - name: Score frame matching and person arrivals for both modes
+        shell: pwsh
+        run: |
+          $replays=@(Get-ChildItem results/baseline/*.json,results/fast/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName })
+          if ($replays.Count -ne 4){throw "Expected four comparable CCTV reports"}
+          python scripts/evaluate_pixel_benchmark.py @replays --output results/fullscreen-scored.json
+          if ($LASTEXITCODE -ne 0){throw "Whole-body IoU evaluation failed"}
+          @'
+          import json,sys
+          rows=json.load(open("results/fullscreen-scored.json",encoding="utf-8"))
+          pair={}
+          for x in rows:
+              key=x["name"].replace("_fast_fullscreen","")
+              kind="fast" if x["name"].endswith("_fast_fullscreen") else "normal"
+              pair.setdefault(key,{})[kind]=x
+          if len(pair)!=2 or any(set(v)!={"normal","fast"} for v in pair.values()):raise SystemExit("missing scenario pairs")
+          lines=["# Real PETS2009 fast fullscreen AI A/B","", "Offline real CCTV pixels, full-body person annotations IoU>=0.5, same YOLOv8n Windows EXE.","",
+          "| Scenario | Original precision / recall | Fast precision / recall | Missed arrivals original/fast | 95th percentile first detection original/fast |",
+          "|---|---|---|---|---|"]
+          gate=True
+          for scene,scenarios in sorted(pair.items()):
+              a,b=scenarios["normal"],scenarios["fast"]
+              def fmt(c):return f'{100*(c["tracking"]["precision"] or 0):.1f}% / {100*(c["tracking"]["recall"] or 0):.1f}%'
+              ap=a["time_to_first_track_ms"]["p95"];bp=b["time_to_first_track_ms"]["p95"]
+              lines.append(f'| {scene} | {fmt(a)} | {fmt(b)} | {a["episodes_missed"]}/{b["episodes_missed"]} | {ap}/{bp} ms |')
+              if b["tracking"]["recall"]<a["tracking"]["recall"] or b["episodes_missed"]>a["episodes_missed"]:gate=False
+          lines+=["",("PROMOTION TEST PASSED ON CLIPS" if gate else "PROMOTION TEST FAILED - do not enable fast by default"),
+          "This offline test does not demonstrate Windows 7 RVi capture, 48 streams or weak i3 performance.",""]
+          open("results/FULLSCREEN-REPORT.md","w",encoding="utf-8").write("\n".join(lines))
+          print("\n".join(lines))
+          '@ | Set-Content -Encoding utf8 results/analyze.py
+          python results/analyze.py
+          if ($LASTEXITCODE -ne 0){throw "Fullscreen report generation failed"}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v3_PETS2009_fullscreen_fast_vs_normal
+          path: results/
+          retention-days: 60
