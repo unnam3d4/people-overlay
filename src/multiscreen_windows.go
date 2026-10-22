@@ -23,6 +23,7 @@ type v3Screen struct {
     candidateProfile int32
     candidateVotes int
     layoutAt time.Time
+    lastProfileChange time.Time
     captureFailures int
     // AI completed on this screen; dispatch does not count as detection.
     completed []time.Time
@@ -392,11 +393,13 @@ func v3Analyze(detector *Detector) {
                 s.candidateProfile=detected
                 s.candidateVotes=1
             }
-            if s.candidateVotes>=2 && detected!=s.profile {
+            if v3AutoLayoutSwitch(detected,s.profile,s.candidateVotes,now.Sub(s.lastProfileChange)) {
                 // Only invalidate the affected monitor; an in-flight result
                 // from another monitor remains valid.
                 epoch++
                 v3SetScreenProfile(s,detected,epoch)
+                s.lastProfileChange=now
+                s.candidateVotes=0
                 aiServed=make([]int,len(screens))
                 nextAI=slot // immediately prioritize newly expanded RVi camera
                 profile=s.profile
