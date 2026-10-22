@@ -288,10 +288,20 @@ func (t *personTracker) assignDetectionsAt(found []Rect, at, capturedAt time.Tim
 				p.Box = d
 			}
 		} else {
+            boxAlpha:=.44
+            // Experimental A/B: when a recent AI crop confidently observes the
+            // same matched person, do not leave its body outline halfway
+            // between the old and new position. Motion has already been
+            // compensated from the captured timestamp in the caller.
+            // Disabled in production pending independently scored CCTV tests.
+            if t.tightBoxCorrections && d.Score>=.68 {
+                alpha=1.0
+                boxAlpha=1.0
+            }
 			p.Box.X += (d.X - p.Box.X) * alpha
 			p.Box.Y += (d.Y - p.Box.Y) * alpha
-			p.Box.W += (d.W - p.Box.W) * .44
-			p.Box.H += (d.H - p.Box.H) * .44
+			p.Box.W += (d.W - p.Box.W) * boxAlpha
+			p.Box.H += (d.H - p.Box.H) * boxAlpha
 		}
 		p.Box.Score = d.Score
 		p.LastAI = at
