@@ -19,6 +19,10 @@ type v3Screen struct {
     tracker personTracker
     alarm alarmGate
     epoch uint64
+    profile int32
+    candidateProfile int32
+    candidateVotes int
+    layoutAt time.Time
     captureFailures int
     // AI completed on this screen; dispatch does not count as detection.
     completed []time.Time
@@ -62,6 +66,7 @@ func v3RelativeBox(b Rect, monitor, union desktopRect) Rect {
 }
 
 func v3CreateScreens(screen uintptr, rects []desktopRect, profile int32, epoch uint64) ([]*v3Screen,error) {
+    if profile==-1 {profile=0} // auto starts fullscreen until a grid is proven
     screens:=make([]*v3Screen,0,len(rects))
     for _,rect:=range rects {
         w,h:=rect.width(),rect.height()
@@ -70,7 +75,7 @@ func v3CreateScreens(screen uintptr, rects []desktopRect, profile int32, epoch u
             for _,s:=range screens {s.snap.close()}
             return nil,err
         }
-        s:=&v3Screen{rect:rect,snap:snap,epoch:epoch}
+        s:=&v3Screen{rect:rect,snap:snap,epoch:epoch,profile:profile}
         s.regions=regionsForProfile(w,h,profile)
         s.completed=make([]time.Time,len(s.regions))
         s.sch.reset(len(s.regions),w,h,profile)
@@ -81,6 +86,23 @@ func v3CreateScreens(screen uintptr, rects []desktopRect, profile int32, epoch u
         screens=append(screens,s)
     }
     return screens,nil
+}
+
+// Rebuild camera regions and tracking only for the screen whose RVi layout
+// changed. Local neural epochs reject obsolete boxes from old layouts.
+func v3SetScreenProfile(s *v3Screen,profile int32,epoch uint64) {
+    if profile<0||profile>3{return}
+    s.profile=profile
+    s.epoch=epoch
+    s.tracker.reset()
+    s.tracker.enableConfirmation()
+    columns:=0
+    if profile==3 {columns=4}
+    s.tracker.layout(s.snap.w,s.snap.h,columns)
+    s.regions=regionsForProfile(s.snap.w,s.snap.h,profile)
+    s.sch.reset(len(s.regions),s.snap.w,s.snap.h,profile)
+    s.completed=make([]time.Time,len(s.regions))
+    s.alarm.resetScene()
 }
 
 func v3Publish(screens []*v3Screen, union desktopRect, now time.Time, last *[]TrackView) {
@@ -227,8 +249,8 @@ func v3Analyze(detector *Detector) {
             lastMonitorPoll=now
         }
         generation:=configurationGeneration.Load()
-        profile:=scanMode.Load()
-        if profile<0||profile>3{profile=3}
+        configuredProfile:=scanMode.Load()
+        if configuredProfile < -1 || configuredProfile>3 {configuredProfile=3}
         if !v3SameRects(lastRects,chosen) || generation!=lastGeneration || len(screens)==0 {
             epoch++
             for _,s:=range screens{s.snap.close()}
@@ -242,7 +264,7 @@ func v3Analyze(detector *Detector) {
                 continue
             }
             var err error
-            screens,err=v3CreateScreens(screen,chosen,profile,epoch)
+            screens,err=v3CreateScreens(screen,chosen,configuredProfile,epoch)
             if err!=nil {
                 logError(err)
                 time.Sleep(time.Second)
@@ -272,13 +294,13 @@ func v3Analyze(detector *Detector) {
                 s.tracker.observePeopleFromCapture(result.detected,result.captured,result.pixels,result.zone,result.capturedAt,now)
                 if idx!=0 || len(s.regions)==1 {
                     tileID:=0
-                    if profile==3 {tileID=idx}
+                    if s.profile==3 {tileID=idx}
                     s.tracker.noteRegionScanSnapshot(result.zone,now,result.capturedAt,tileID,result.captured)
                 }
                 lastInferenceMS.Store(result.duration.Milliseconds())
                 lastBusy=result.duration
-                s.tracker.maxAIAge=recheckTTL(len(s.regions),profile,lastBusy)
-                nextInfer=now.Add(throttleFor(profile,result.duration))
+                s.tracker.maxAIAge=recheckTTL(len(s.regions),s.profile,lastBusy)
+                nextInfer=now.Add(throttleFor(s.profile,result.duration))
             default:
                 drain=false
             }
@@ -288,6 +310,7 @@ func v3Analyze(detector *Detector) {
         slot:=turn%len(screens)
         turn++
         s:=screens[slot]
+        profile:=s.profile
         w,h:=s.snap.w,s.snap.h
         start:=time.Now()
         flags:=uintptr(srcCopy)
@@ -317,6 +340,24 @@ func v3Analyze(detector *Detector) {
         }
         s.captureFailures=0
         pGdiFlush.Call()
+        if configuredProfile==-1 && now.Sub(s.layoutAt)>850*time.Millisecond {
+            s.layoutAt=now
+            detected:=v3RecognizeLayout(s.snap.pixels,w,h)
+            if detected==s.candidateProfile {
+                s.candidateVotes++
+            } else {
+                s.candidateProfile=detected
+                s.candidateVotes=1
+            }
+            if s.candidateVotes>=2 && detected!=s.profile {
+                // Only invalidate the affected monitor; an in-flight result
+                // from another monitor remains valid.
+                epoch++
+                v3SetScreenProfile(s,detected,epoch)
+                profile=s.profile
+                nextInfer=time.Time{}
+            }
+        }
         lastCaptureUS.Store(time.Since(start).Microseconds())
 
         // Diagnostic capture stays local and is scoped to the selected monitor.
