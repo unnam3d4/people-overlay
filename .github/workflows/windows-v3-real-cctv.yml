@@ -1,0 +1,91 @@
+name: v3 real CCTV PETS2009 whole-person evaluation Windows only
+on:
+  push:
+    branches: [feature/people-overlay-v3]
+    paths:
+      - '.github/workflows/windows-v3-real-cctv.yml'
+      - 'scripts/pets2009_person_body_replay.py'
+      - 'scripts/evaluate_pixel_benchmark.py'
+      - 'scripts/cctv_v3_summary.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: v3-real-cctv-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  pets-real-person:
+    runs-on: windows-2022
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install research-only tools on CI runner
+        run: python -m pip install kagglehub pillow==12.1.1 numpy==2.2.6 psutil==7.2.2
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 39614859651
+          name: PeopleOverlay_v1.9_YOLO26n_Win7_11_Verified
+          github-token: ${{ github.token }}
+          path: BASE26
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 39765359100
+          name: v3-portable-unverified-internal
+          github-token: ${{ github.token }}
+          path: DIST
+      - name: Build unchanged v1.9 baseline with identical benchmark harness
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force _baseline | Out-Null
+          python scripts/build_benchmark_baseline.py --go (Get-Command go).Source --work _baseline --output _baseline_v19.exe
+          if ($LASTEXITCODE -ne 0) { throw "Baseline compilation failed" }
+          python scripts/package_current.py --application _baseline_v19.exe --donor BASE26/PeopleOverlay_v1.9_YOLO26n_x64.exe --output DIST/v19-benchmark-x64.exe
+          if ($LASTEXITCODE -ne 0) { throw "Baseline model packing failed" }
+      - name: Verify identical NCNN YOLO26n person model and DLL are embedded
+        shell: pwsh
+        run: |
+          $baseline = Get-Content DIST/v19-benchmark-x64.bundle.json -Raw | ConvertFrom-Json
+          $current = Get-Content DIST/PeopleOverlay_v3_YOLO26n_x64.bundle.json -Raw | ConvertFrom-Json
+          foreach ($part in @('model.param','model.bin','ncnnbridge.dll')) {
+            if ($baseline.resources_sha256.$part -ne $current.resources_sha256.$part) {
+              throw "Different neural model or native DLL: $part"
+            }
+          }
+          Write-Host "VERIFIED: identical YOLO26n weights / NCNN library for baseline and v3."
+      - name: Download PETS2009 actual filmed CCTV with pinned whole-person GT
+        run: python scripts/pets2009_person_body_replay.py --output _pets_real_fixture --fps 15 --duration 7
+      - name: Replay real filmed body bounding boxes through both packed Windows EXEs
+        run: python scripts/run_pixel_benchmarks.py --exe v19=DIST/v19-benchmark-x64.exe --exe v3=DIST/PeopleOverlay_v3_YOLO26n_x64.exe --fixtures _pets_real_fixture --output evidence/replay
+      - name: Score full-body precision recall missed arrivals ID stability and delays
+        shell: pwsh
+        run: |
+          $reports = @(Get-ChildItem evidence/replay/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName })
+          if ($reports.Count -ne 8) { throw "Expected 8 full person-body replay reports, got $($reports.Count)" }
+          python scripts/evaluate_pixel_benchmark.py @reports --output evidence/comparison.json
+          if ($LASTEXITCODE -ne 0) { throw "Real-body evaluator failed" }
+      - name: Generate human-readable real CCTV report and flag regressions
+        shell: pwsh
+        run: |
+          python scripts/cctv_v3_summary.py evidence/comparison.json --out evidence/REPORT.md
+          if ($LASTEXITCODE -ne 0) { throw "Reporting failed" }
+          Get-Content evidence/REPORT.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PeopleOverlay_v3_PETS2009_BODY_groundtruth_metrics
+          path: |
+            evidence/
+            _pets_real_fixture/PETS2009_PROVENANCE.json
+            DIST/PeopleOverlay_v3_YOLO26n_x64.bundle.json
+            DIST/v19-benchmark-x64.bundle.json
+          retention-days: 90
