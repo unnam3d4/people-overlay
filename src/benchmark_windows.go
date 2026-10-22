@@ -35,6 +35,8 @@ type benchmarkManifest struct {
 	Source      map[string]string `json:"source"`
 	FPS         int               `json:"fps"`
 	Profile     int32             `json:"profile"`
+	// Research-only paired-vertical CCTV crop experiment; never enabled in normal RVi automatically.
+	PairedCCTV bool `json:"paired_cctv,omitempty"`
 	Sensitivity int32             `json:"sensitivity"`
 	Threads     int               `json:"threads"`
 	Contrast    bool              `json:"contrast"`
@@ -90,6 +92,30 @@ type benchmarkReport struct {
 	WallMS       float64                `json:"wall_ms"`
 	Frames       []benchmarkObservation `json:"frames"`
 	Inferences   []benchmarkInference   `json:"inferences"`
+}
+
+// Two vertically adjacent camera tiles share one NCNN 640x640 inference.
+// 4x4 layouts become eight groups, with strictly bounded padded ROIs.
+// The regular benchmark and real program remain unchanged unless enabled.
+// Kept in shared benchmark harness so unchanged historical v1.9 compiles.
+func benchmarkVerticalPairRegions(w,h int) []scanRegion {
+    if w<64||h<64 {return nil}
+    regs:=[]scanRegion{{0,0,w,h}}
+    for r:=0;r<2;r++ {
+        for c:=0;c<4;c++ {
+            left,right:=c*w/4,(c+1)*w/4
+            top,bottom:=r*h/2,(r+1)*h/2
+            px:=(right-left)*12/100
+            py:=(bottom-top)*6/100
+            if px<8{px=8};if py<5{py=5}
+            if left-px>=0 {left-=px}else{left=0}
+            if top-py>=0{top-=py}else{top=0}
+            if right+px<w {right+=px}else{right=w}
+            if bottom+py<h{bottom+=py}else{bottom=h}
+            regs=append(regs,scanRegion{left,top,right-left,bottom-top})
+        }
+    }
+    return regs
 }
 
 func benchmarkMS(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
@@ -204,6 +230,7 @@ func runBenchmarkCLI(args []string) error {
 	if len(manifest.Frames) == 0 {
 		return fmt.Errorf("benchmark has no PNG frames")
 	}
+	if manifest.PairedCCTV && manifest.Profile!=3 {return fmt.Errorf("paired_cctv only supports 4x4 CCTV profile")}
 	if manifest.Profile < 0 || manifest.Profile > 3 {
 		return fmt.Errorf("invalid profile")
 	}
@@ -284,6 +311,7 @@ func runBenchmarkCLI(args []string) error {
 			if i == 0 {
 				report.Width, report.Height = w, h
 				regs = regionsForProfile(w, h, manifest.Profile)
+                if manifest.PairedCCTV {regs=benchmarkVerticalPairRegions(w,h)}
 				sch.reset(len(regs), w, h, manifest.Profile)
 				if manifest.Profile == 3 {
 					sch.lastFull = now
@@ -340,7 +368,7 @@ func runBenchmarkCLI(args []string) error {
 					}
 					if result.RegionIndex != 0 || len(regs) == 1 {
 						tile := 0
-						if manifest.Profile == 3 {
+						if manifest.Profile == 3 && !manifest.PairedCCTV {
 							tile = result.RegionIndex
 						}
 						if hasNegative {
