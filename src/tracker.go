@@ -887,7 +887,7 @@ func (t *personTracker) views(now time.Time) []TrackView {
         if !t.drawableTrack(p,now) {continue}
         match:=-1
         for i:=range selected {
-            if displayDuplicateTracks(selected[i],p,now) {
+            if t.confirmationRequired && displayDuplicateTracks(selected[i],p,now) {
                 match=i
                 break
             }
