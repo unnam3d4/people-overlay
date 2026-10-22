@@ -61,3 +61,19 @@ func TestNewOldTrackNotMergedWithoutSufficientGeometricEvidence(t *testing.T){
         t.Fatal("one person walking past another must not be collapsed")
     }
 }
+
+func TestThreeTimeStaggeredFramesOfOnePersonShowOneMarker(t *testing.T){
+    now:=time.Unix(800400,0)
+    var tr personTracker
+    tr.enableConfirmation()
+    tr.layout(1920,1080,4)
+    tr.people=[]personTrack{
+        {ID:31,Tile:7,Box:Rect{X:1000,Y:150,W:44,H:110},State:trackConfirmed,AIHits:3,LastAI:now.Add(-1700*time.Millisecond),LastVisual:now},
+        {ID:32,Tile:7,Box:Rect{X:1020,Y:151,W:44,H:110},State:trackConfirmed,AIHits:1,LastAI:now.Add(-700*time.Millisecond),LastVisual:now},
+        {ID:33,Tile:7,Box:Rect{X:1031,Y:151,W:44,H:110},State:trackConfirmed,AIHits:1,LastAI:now.Add(-100*time.Millisecond),LastVisual:now},
+    }
+    got:=tr.views(now)
+    if len(got)!=1||got[0].ID!=33 {
+        t.Fatalf("three overlapping time-staggered IDs rendered on one pedestrian: %+v",got)
+    }
+}
