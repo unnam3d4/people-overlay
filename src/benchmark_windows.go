@@ -366,6 +366,11 @@ func runBenchmarkCLI(args []string) error {
 				if candidates,ok:=interface{}(&tracker).(interface{tentativeViews(time.Time)[]TrackView});ok{
 				 if retry,ok:=interface{}(&sch).(interface{confirmationRecheck(time.Time,[]TrackView,[]scanRegion,int)int});ok{index=retry.confirmationRecheck(now,candidates.tentativeViews(now),regs,index)}
 				}
+                // Optional new-v3 scheduling step: unchanged historical v1.9
+                // baseline has no such method and remains build-compatible.
+                if fair,ok:=interface{}(&sch).(interface{
+                    ensureFirstCoverage(int32,[]scanRegion,int)int
+                });ok {index=fair.ensureFirstCoverage(manifest.Profile,regs,index)}
 				obs.Times.SchedulerMS += benchmarkMS(time.Since(begun))
 				zone := regs[index]
 				begun = time.Now()
