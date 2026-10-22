@@ -353,10 +353,19 @@ func render(hwnd uintptr) {
 	var oldVersion int64 = -1
 	var oldW, oldH int
     var oldX,oldY int32
+    // Reading Win32 monitor topology for every corner repaint costs more on
+    // Windows 11 multi-4K setups. The capture worker already polls every 1s.
+    // Keep the rendering geometry cached for the same bounded 1s interval.
+    var lastMonitorPoll time.Time
+    var cachedMonitors []desktopRect
 	var oldEnabled, oldTest bool
 	var oldColor int32
 	for !stopped.Load() {
-        target:=v3UnionRect(v3AllRects(monitorList()))
+        if time.Since(lastMonitorPoll)>=time.Second || cachedMonitors==nil {
+            cachedMonitors=v3AllRects(monitorList())
+            lastMonitorPoll=time.Now()
+        }
+        target:=v3UnionRect(cachedMonitors)
         w,h:=target.width(),target.height()
 		if w < 64 || h < 64 {
 			time.Sleep(time.Second)
