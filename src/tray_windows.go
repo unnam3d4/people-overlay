@@ -89,9 +89,34 @@ type trayWindowClass struct {
 	Instance, Icon, Cursor, Background, MenuName, ClassName, SmallIcon uintptr
 }
 
+// Shell_NotifyIcon delivers icon callbacks with SendMessage as well as
+// posted messages. Messages sent synchronously go DIRECTLY to WndProc and
+// never appear in GetMessage. The old DefWindowProc-only implementation made
+// left/right clicks silently disappear on some Windows 10/11 Explorer builds.
+var activeTray *appTray
+
+func trayMouseOp(event uint32) int {
+    switch event {
+    case wmRButtonUp, wmContextMenu, wmLButtonUp, wmLButtonDouble:
+        return 1 // open context menu, never silently toggle detection
+    default:
+        return 0
+    }
+}
 func trayDefaultWindowProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
-	r, _, _ := trayDefWindowProc.Call(hwnd, uintptr(msg), wparam, lparam)
-	return r
+    t:=activeTray
+    if t!=nil && hwnd==t.hwnd {
+        if msg==trayMessage {
+            if trayMouseOp(uint32(lparam))!=0 {t.popupMenu()}
+            return 0
+        }
+        if t.taskbarMessage!=0 && msg==t.taskbarMessage {
+            t.reAdd() // Explorer.exe rebuilt taskbar after a restart
+            return 0
+        }
+    }
+    r,_,_:=trayDefWindowProc.Call(hwnd,uintptr(msg),wparam,lparam)
+    return r
 }
 
 type trayData struct {
@@ -191,11 +216,15 @@ func newTray(overlay uintptr) (*appTray, error) {
 	t.data.UCallbackMessage = trayMessage
 	t.data.HIcon = icon
 	copy(t.data.Tip[:], syscall.StringToUTF16("People Overlay AI - video person detection"))
+    // Install owner before Shell_NotifyIcon: Explorer may immediately query
+    // the callback window via synchronous SendMessage.
+    activeTray=t
 	msg := syscall.StringToUTF16Ptr("TaskbarCreated")
 	taskbar, _, _ := trayRegisterWindowMessage.Call(uintptr(unsafe.Pointer(msg)))
 	t.taskbarMessage = uint32(taskbar)
 	ok, _, e := trayNotify.Call(trayAdd, uintptr(unsafe.Pointer(&t.data)))
 	if ok == 0 {
+        activeTray=nil
 		if owned {
 			trayDestroyIcon.Call(icon)
 		}
@@ -214,6 +243,7 @@ func (t *appTray) close() {
 		return
 	}
 	trayNotify.Call(trayDelete, uintptr(unsafe.Pointer(&t.data)))
+    if activeTray==t {activeTray=nil}
 	if t.ownsIcon {
 		trayDestroyIcon.Call(t.icon)
 	}
