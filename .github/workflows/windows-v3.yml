@@ -1,0 +1,78 @@
+name: People Overlay v3 - cross-platform compile and four-monitor geometry
+on:
+  push:
+    branches:
+      - feature/people-overlay-v3
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: people-overlay-v3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable-compile:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - name: Verify production Windows x64 and x86 paths with real Go tests
+        shell: pwsh
+        working-directory: src
+        run: |
+          $env:CGO_ENABLED='0'
+          $env:GOARCH='amd64'
+          go test -tags ncnn ./... -count=1
+          if ($LASTEXITCODE -ne 0) { throw "Windows x64 unit tests failed" }
+          $env:GOARCH='386'
+          go test -tags ncnn ./... -count=1
+          if ($LASTEXITCODE -ne 0) { throw "Windows x86 unit tests failed" }
+      - name: Check v3 Windows builds do not require local Python
+        shell: pwsh
+        working-directory: src
+        run: |
+          $env:CGO_ENABLED='0'
+          $env:GOARCH='amd64'
+          go build -tags ncnn -o ../PeopleOverlay_v3_compile_only_x64.exe .
+          if ($LASTEXITCODE -ne 0) { throw "Windows x64 build failed" }
+          $env:GOARCH='386'
+          go build -tags ncnn -o ../PeopleOverlay_v3_compile_only_x86.exe .
+          if ($LASTEXITCODE -ne 0) { throw "Windows x86 build failed" }
+      - name: Read-only Win32 monitor inventory smoke test
+        shell: pwsh
+        run: |
+          $report=Join-Path (Get-Location) 'monitor-report.json'
+          $exe=Join-Path (Get-Location) 'PeopleOverlay_v3_compile_only_x64.exe'
+          $proc=Start-Process -FilePath $exe -ArgumentList @('--monitor-report',('"' + $report + '"')) -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Monitor report failed: $($proc.ExitCode)" }
+          $monitors=@(Get-Content $report -Raw | ConvertFrom-Json)
+          if ($monitors.Count -lt 1) { throw "Win32 monitor list empty" }
+          Write-Host "CI checks monitor enumeration, not a 4-monitor RVi operator desktop."
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v3-win32-monitor-test-log
+          path: monitor-report.json
+          if-no-files-found: ignore
+          retention-days: 15
+  linux-regression:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - name: Existing algorithm regressions and static cross-compilation
+        run: |
+          cd src
+          go test ./... -count=1
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags ncnn -o /tmp/people-overlay-v3-x64.exe .
+          GOOS=windows GOARCH=386 CGO_ENABLED=0 go build -tags ncnn -o /tmp/people-overlay-v3-x86.exe .
