@@ -52,9 +52,12 @@ type personTracker struct {
 	columns              int
 	maxAIAge             time.Duration
 	confirmationRequired bool
+    // Research toggle: use full-confidence NN geometry instead of stale interpolation.
+    tightBoxCorrections bool
 }
 
 func (t *personTracker) enableConfirmation() { t.confirmationRequired = true }
+func (t *personTracker) enableTightBoxes() { t.tightBoxCorrections = true }
 
 func (t *personTracker) recordConfirmation(p *personTrack, score float32, capturedAt, now time.Time) {
 	if p.FirstAI.IsZero() {
