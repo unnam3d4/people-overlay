@@ -1,0 +1,108 @@
+name: v3 portable field trial - offline models and smoke tests
+on:
+  push:
+    branches: [feature/people-overlay-v3]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: people-overlay-v3-portable-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Regression tests
+        run: |
+          cd src
+          go test ./... -count=1
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 39614859651
+          name: PeopleOverlay_v1.9_YOLO26n_Win7_11_Verified
+          github-token: ${{ github.token }}
+          path: BASE26
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 39613297202
+          name: PeopleOverlay_v1.8_Fast_CCTV_PersonLock_Win7
+          github-token: ${{ github.token }}
+          path: BASE8
+      - name: Pack fresh v3 EXE with verified embedded model and compatible DLL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p DIST
+          for pair in 'amd64 x64' '386 x86'; do
+            read -r goarch arch <<< "$pair"
+            (cd src && CGO_ENABLED=0 GOOS=windows GOARCH="$goarch" go build -tags ncnn -trimpath -ldflags '-s -w -H windowsgui' -o "../app-$arch.exe" .)
+            python scripts/package_current.py --application "app-$arch.exe" --donor "BASE26/PeopleOverlay_v1.9_YOLO26n_$arch.exe" --output "DIST/PeopleOverlay_v3_YOLO26n_$arch.exe"
+            python scripts/package_current.py --application "app-$arch.exe" --donor "BASE8/PeopleOverlay_Win7_NCNN_$arch.exe" --output "DIST/PeopleOverlay_v3_YOLOv8n_$arch.exe"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v3-portable-unverified-internal
+          path: DIST/
+          retention-days: 14
+
+  field-trial:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: v3-portable-unverified-internal
+          path: DIST
+      - name: Validate positive and empty people detection in every packed EXE
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          foreach ($exe in Get-ChildItem DIST/PeopleOverlay_v3_YOLO*.exe) {
+            $report = Join-Path (Resolve-Path evidence).Path ($exe.BaseName + '.json')
+            $proc = Start-Process -FilePath $exe.FullName -ArgumentList @('--selftest',('"' + $report + '"')) -Wait -PassThru
+            if ($proc.ExitCode -ne 0 -or !(Test-Path $report)) { throw "Selftest failed: $($exe.Name)" }
+            $data = Get-Content $report -Raw | ConvertFrom-Json
+            if (!$data.passed -or $data.matched_people -ne 3 -or $data.blank_people -ne 0) { throw "Invalid person detection: $($exe.Name)" }
+          }
+      - name: Package clearly labeled experimental offline download
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force RELEASE | Out-Null
+          Get-ChildItem DIST/PeopleOverlay_v3_YOLO*.exe | Copy-Item -Destination RELEASE
+          Get-ChildItem DIST/PeopleOverlay_v3_YOLO*.bundle.json | Copy-Item -Destination RELEASE
+          Copy-Item README.md,BENCHMARK.md,LICENSE,THIRD_PARTY_NOTICES.txt RELEASE
+          @'
+          PEOPLE OVERLAY v3 - EXPERIMENTAL FIELD TRIAL
+          Windows 7 and 10 targeted; real Windows 7 and four physical monitor RVi tests NOT COMPLETED.
+          Runs offline; no Python required on test PC.
+          EXE uses monitor union, four independent capture/tracking contexts and one shared CPU NCNN worker.
+          Only run ONE EXE: choose x64 or x86, YOLO26n or YOLOv8n fallback.
+          Ctrl+Alt+F9: toggle. Ctrl+Alt+F10: exit. Ctrl+Alt+F7: mute.
+          Tray -> capture screenshot monitor selector: diagnostic ONLY, detection runs on all displays.
+          WARNING: Up to 48 camera tiles and two-second detection NOT performance-validated.
+          WARNING: v20 had poor person-body recall on PETS2009; v3 has no validated improvement yet.
+          Never rely on trial as sole surveillance/safety system.
+          '@ | Out-File RELEASE/READ-ME-FIRST.txt -Encoding utf8
+          Compress-Archive -Path RELEASE/* -DestinationPath PeopleOverlay_v3_EXPERIMENTAL_OFFLINE.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PeopleOverlay_v3_EXPERIMENTAL_OFFLINE_Win7_10_x64_x86
+          path: PeopleOverlay_v3_EXPERIMENTAL_OFFLINE.zip
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PeopleOverlay_v3_packed_model_selftests
+          path: evidence/
+          retention-days: 30
