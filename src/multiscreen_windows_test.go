@@ -39,3 +39,24 @@ func TestV3CapFourAndDynamicDisconnect(t *testing.T){
     if v3SameRects(got,v3AllRects(monitors[:3])){t.Fatal("disconnect must rebuild overlays and contexts")}
     if v3UnionRect(nil)!= (desktopRect{}){t.Fatal("empty topology must be nonvalid")}
 }
+
+func TestV3IndependentDisplayEpochs(t *testing.T) {
+    screens:=[]*v3Screen{{epoch:10},{epoch:10},{epoch:10}}
+    first:=inferenceReply{display:0,epoch:10}
+    second:=inferenceReply{display:1,epoch:10}
+    if !v3AcceptReply(screens,first) || !v3AcceptReply(screens,second) {
+        t.Fatal("legitimate reply rejected")
+    }
+    // Scene changed only on display 1; monitor 2 keeps its in-flight hit.
+    screens[0].epoch=11
+    if v3AcceptReply(screens,first) {t.Fatal("old scene returned stale people")}
+    if !v3AcceptReply(screens,second) {t.Fatal("unrelated screen lost its result")}
+    screens[1].epoch=12
+    if v3AcceptReply(screens,second){t.Fatal("topology change revived old reply")}
+    if v3AcceptReply(screens,inferenceReply{display:3,epoch:12}) {
+        t.Fatal("out-of-range physical monitor accepted")
+    }
+    if v3AcceptReply(screens,inferenceReply{display:-1,epoch:12}) {
+        t.Fatal("negative monitor index accepted")
+    }
+}
