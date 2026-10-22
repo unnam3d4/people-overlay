@@ -116,10 +116,11 @@ func TestSmallCCTVPersonCanMove(t *testing.T){
 }
 
 func TestOnePersonCrossingImaginaryScreenSplitKeepsID(t *testing.T){
- // RVi video canvas may be shifted right/down by window chrome. A person
- // crossing an algorithmic 4x4 ROI boundary is not a new person.
+ // A FULLSCREEN RVi camera has no independent feed boundaries.
+ // The person crossing an imaginary former 4x4 ROI line keeps one ID.
+ // A real CCTV 4x4 mosaic is tested separately for strict isolation.
  var tr personTracker
- tr.layout(1920,1080,4)
+ tr.layout(1920,1080,0)
  now:=time.Unix(20000,0)
  tr.observePeople([]Rect{{X:449,Y:160,W:55,H:119,Score:.93}},now)
  orig:=tr.views(now)
