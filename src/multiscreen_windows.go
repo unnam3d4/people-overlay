@@ -102,9 +102,7 @@ func v3CreateScreens(screen uintptr, rects []desktopRect, profile int32, epoch u
         s.completed=make([]time.Time,len(s.regions))
         s.sch.reset(len(s.regions),w,h,profile)
         s.tracker.enableConfirmation()
-        cols:=0
-        if profile==3 {cols=4}
-        s.tracker.layout(w,h,cols)
+        s.tracker.layout(w,h,v3GridColumns(profile))
         screens=append(screens,s)
     }
     return screens,nil
@@ -118,9 +116,7 @@ func v3SetScreenProfile(s *v3Screen,profile int32,epoch uint64) {
     s.epoch=epoch
     s.tracker.reset()
     s.tracker.enableConfirmation()
-    columns:=0
-    if profile==3 {columns=4}
-    s.tracker.layout(s.snap.w,s.snap.h,columns)
+    s.tracker.layout(s.snap.w,s.snap.h,v3GridColumns(profile))
     s.regions=regionsForProfile(s.snap.w,s.snap.h,profile)
     s.sch.reset(len(s.regions),s.snap.w,s.snap.h,profile)
     s.completed=make([]time.Time,len(s.regions))
@@ -322,12 +318,13 @@ func v3Analyze(detector *Detector) {
                 if result.err!=nil {logError(result.err);nextInfer=now.Add(time.Second);continue}
                 idx:=regionIndex(s.regions,result.zone)
                 if idx<0 {continue}
-                s.sch.markScannedPeople(idx,now,result.detected)
+                found:=v3KeepCameraDetections(result.detected,idx,s.snap.w,s.snap.h,s.profile)
+                s.sch.markScannedPeople(idx,now,found)
                 s.completed[idx]=now
-                s.tracker.observePeopleFromCapture(result.detected,result.captured,result.pixels,result.zone,result.capturedAt,now)
+                s.tracker.observePeopleFromCapture(found,result.captured,result.pixels,result.zone,result.capturedAt,now)
                 if idx!=0 || len(s.regions)==1 {
                     tileID:=0
-                    if s.profile==3 {tileID=idx}
+                    if v3GridColumns(s.profile)>0 {tileID=idx}
                     s.tracker.noteRegionScanSnapshot(result.zone,now,result.capturedAt,tileID,result.captured)
                 }
                 lastInferenceMS.Store(result.duration.Milliseconds())
@@ -425,7 +422,7 @@ func v3Analyze(detector *Detector) {
             epoch++
             s.epoch=epoch
             s.tracker.reset()
-            s.tracker.layout(w,h,func()int{if profile==3{return 4};return 0}())
+            s.tracker.layout(w,h,v3GridColumns(profile))
             s.alarm.resetScene()
             s.sch.reset(len(s.regions),w,h,profile)
             s.completed=make([]time.Time,len(s.regions))
