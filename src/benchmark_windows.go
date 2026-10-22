@@ -38,6 +38,7 @@ type benchmarkManifest struct {
 	// Research-only paired-vertical CCTV crop experiment; never enabled in normal RVi automatically.
 	PairedCCTV bool `json:"paired_cctv,omitempty"`
     TightAIBoxes bool `json:"tight_ai_boxes,omitempty"`
+    FullDetail bool `json:"fullscreen_detail,omitempty"`
 	Sensitivity int32             `json:"sensitivity"`
 	Threads     int               `json:"threads"`
 	Contrast    bool              `json:"contrast"`
@@ -232,6 +233,7 @@ func runBenchmarkCLI(args []string) error {
 		return fmt.Errorf("benchmark has no PNG frames")
 	}
 	if manifest.PairedCCTV && manifest.Profile!=3 {return fmt.Errorf("paired_cctv only supports 4x4 CCTV profile")}
+    if manifest.FullDetail && (manifest.Profile!=0 || manifest.PairedCCTV) {return fmt.Errorf("fullscreen_detail requires single-camera profile")}
 	if manifest.Profile < 0 || manifest.Profile > 3 {
 		return fmt.Errorf("invalid profile")
 	}
@@ -319,6 +321,7 @@ func runBenchmarkCLI(args []string) error {
 				report.Width, report.Height = w, h
 				regs = regionsForProfile(w, h, manifest.Profile)
                 if manifest.PairedCCTV {regs=benchmarkVerticalPairRegions(w,h)}
+                if manifest.FullDetail {regs=v3FullDetailRegions(w,h)}
 				sch.reset(len(regs), w, h, manifest.Profile)
 				if manifest.Profile == 3 {
 					sch.lastFull = now
@@ -398,6 +401,13 @@ func runBenchmarkCLI(args []string) error {
 			if !pending && !now.Before(nextInference) {
 				begun = time.Now()
 				index := sch.nextAdaptive(now, manifest.Profile, viewsForScheduler(now), regs)
+                if manifest.FullDetail {
+                    // Historical v1.9 lacks this research scheduler. A/B uses
+                    // same packed v3 EXE and manually annotated video pixels.
+                    if impl,ok:=interface{}(&sch).(interface{nextFullDetail(time.Time)int});ok{
+                        index=impl.nextFullDetail(now)
+                    }
+                }
 				if candidates,ok:=interface{}(&tracker).(interface{tentativeViews(time.Time)[]TrackView});ok{
 				 if retry,ok:=interface{}(&sch).(interface{confirmationRecheck(time.Time,[]TrackView,[]scanRegion,int)int});ok{index=retry.confirmationRecheck(now,candidates.tentativeViews(now),regs,index)}
 				}
