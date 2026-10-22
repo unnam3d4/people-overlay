@@ -458,6 +458,17 @@ func singletonGuard() (func(), error) {
 	return func() { pCloseHandle.Call(mutex) }, nil
 }
 func main() {
+    // Read-only Win32 monitor diagnostics for x86/x64 CI and troubleshooting.
+    if len(os.Args)==3 && os.Args[1]=="--monitor-report" {
+        runtime.LockOSThread()
+        defer runtime.UnlockOSThread()
+        pDPI.Call()
+        if err:=benchmarkWrite(os.Args[2],monitorList());err!=nil{
+            logError(err)
+            os.Exit(27)
+        }
+        return
+    }
  if len(os.Args)==4&&os.Args[1]=="--capture-test"{
   if e:=runCaptureTest(os.Args[2],os.Args[3]);e!=nil{logError(e);os.Exit(26)}
   return
