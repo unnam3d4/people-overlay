@@ -53,7 +53,7 @@ func trackMatchScore(p personTrack, d Rect, cell int, at time.Time) float64 {
 	}
 	// Camera mosaics are independent video streams. Do not transfer a track
 	// to another cell, even if boxes happen to overlap across tile borders.
-	if p.Tile > 0 && cell > 0 && p.Tile != cell && overlap(d, p.Box) < .30 {
+	if p.Tile > 0 && cell > 0 && p.Tile != cell {
 		return 0
 	}
 	if nestedROISubject(d, p.Box) {
@@ -317,7 +317,7 @@ func (t *personTracker) assignDetectionsAt(found []Rect, at, capturedAt time.Tim
 		}
 		duplicate := false
 		for _, p := range t.people {
-			if p.Tile > 0 && t.tileOf(d) > 0 && p.Tile != t.tileOf(d) && overlap(d, p.Box) < .30 {
+			if p.Tile > 0 && t.tileOf(d) > 0 && p.Tile != t.tileOf(d) {
 				continue
 			}
 			if sameROISubject(d, p.Box) {
