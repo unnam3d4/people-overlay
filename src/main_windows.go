@@ -120,7 +120,7 @@ func (d *dib) close() {
 	*d = dib{}
 }
 func screenSize() (int, int) {
-    target:=activeDesktopRect()
+    target:=v3UnionRect(v3AllRects(monitorList()))
     return target.width(),target.height()
 }
 func alert(title, msg string) {
@@ -141,8 +141,8 @@ func logError(e error) {
 	}
 }
 
-// Index 0 is the primary monitor. Further entries follow stable coordinate
-// order. Only one monitor is scanned at a time to bound old-CPU load.
+// Display selection is used only for local capture diagnostics in v3.
+// Detection runs on all currently connected screens (up to four).
 var displaySelection atomic.Int32
 var enabled atomic.Bool
 var configurationGeneration atomic.Uint64
@@ -337,7 +337,7 @@ func render(hwnd uintptr) {
 	var oldEnabled, oldTest bool
 	var oldColor int32
 	for !stopped.Load() {
-        target:=activeDesktopRect()
+        target:=v3UnionRect(v3AllRects(monitorList()))
         w,h:=target.width(),target.height()
 		if w < 64 || h < 64 {
 			time.Sleep(time.Second)
@@ -352,6 +352,11 @@ func render(hwnd uintptr) {
 				time.Sleep(time.Second)
 				continue
 			}
+			pPos.Call(hwnd, ^uintptr(0), uintptr(int64(target.Left)), uintptr(int64(target.Top)), uintptr(w), uintptr(h), 0x10|0x40)
+		}
+		// A DPI/display-topology change may move the virtual origin without
+		// changing canvas size. Always reposition the click-through overlay.
+		if oldX!=target.Left || oldY!=target.Top {
 			pPos.Call(hwnd, ^uintptr(0), uintptr(int64(target.Left)), uintptr(int64(target.Top)), uintptr(w), uintptr(h), 0x10|0x40)
 		}
 		active, test, c := enabled.Load(), testOnly.Load(), colour.Load()
@@ -408,7 +413,7 @@ func render(hwnd uintptr) {
 func makeOverlay(w, h int) (uintptr, error) {
 	cls, _ := syscall.UTF16PtrFromString("STATIC")
 	title, _ := syscall.UTF16PtrFromString("People Overlay AI")
-	target:=activeDesktopRect()
+	target:=v3UnionRect(v3AllRects(monitorList()))
     wnd, _, e := pWindow.Call(layered|transparent|toolWindow|noActivate|topMost, uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(title)), popUp, uintptr(int64(target.Left)), uintptr(int64(target.Top)), uintptr(w), uintptr(h), 0, 0, 0, 0)
 	if wnd == 0 {
 		return 0, fmt.Errorf("CreateWindowExW failed: %v", e)
@@ -563,7 +568,7 @@ func main() {
 	var workers sync.WaitGroup
 	workers.Add(2)
 	go func() { defer workers.Done(); render(hwnd) }()
-	go func() { defer workers.Done(); analyze(d) }()
+	go func() { defer workers.Done(); v3Analyze(d) }()
 	defer func() { stopped.Store(true); workers.Wait() }()
 	var m message
 	for {
