@@ -93,6 +93,22 @@ jobs:
           $env:GOARCH = '386'
           go test -tags ncnn ./...
           if ($LASTEXITCODE -ne 0) { throw 'Windows x86 Go tests failed' }
+      - name: Inspect actual physical monitor enumeration in portable x86 and x64 Windows EXEs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force benchmark-results/monitors | Out-Null
+          foreach ($name in @('PeopleOverlay_v2.0_candidate_YOLO26n_x64.exe','PeopleOverlay_v2.0_candidate_YOLO26n_x86.exe')) {
+            $exe = (Resolve-Path (Join-Path DIST $name)).Path
+            $out = Join-Path (Resolve-Path benchmark-results/monitors).Path ($name + '.json')
+            $p = Start-Process -FilePath $exe -ArgumentList @('--monitor-report', ('"' + $out + '"')) -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "Monitor API probe failed for $name with $($p.ExitCode)" }
+            $monitors = @(Get-Content $out -Raw | ConvertFrom-Json)
+            if ($monitors.Count -lt 1 -or !$monitors[0].Primary) { throw "Primary Win32 monitor missing on $name" }
+            foreach ($m in $monitors) {
+              if ($m.Rect.Right -le $m.Rect.Left -or $m.Rect.Bottom -le $m.Rect.Top) { throw "Invalid monitor rectangle on $name" }
+            }
+            Write-Host "$name: $($monitors.Count) actual monitors enumerated. CI does NOT exercise a true multi-monitor desktop."
+          }
       - name: Actual embedded-model positive and negative self-tests on both architectures
         shell: pwsh
         run: |
