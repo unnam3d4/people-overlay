@@ -11,6 +11,7 @@ on:
       - 'src/benchmark_windows.go'
       - 'src/multiscreen_windows.go'
       - 'src/scheduler_coverage_test.go'
+      - 'scripts/cctv_model_comparison.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -41,6 +42,12 @@ jobs:
           name: PeopleOverlay_v1.9_YOLO26n_Win7_11_Verified
           github-token: ${{ github.token }}
           path: BASE26
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 39613297202
+          name: PeopleOverlay_v1.8_Fast_CCTV_PersonLock_Win7
+          github-token: ${{ github.token }}
+          path: BASE8
       - name: Build this exact v3 commit as Windows x64 with no CGO
         shell: pwsh
         run: |
@@ -55,6 +62,8 @@ jobs:
           Pop-Location
           python scripts/package_current.py --application _v3_benchmark_app.exe --donor BASE26/PeopleOverlay_v1.9_YOLO26n_x64.exe --output DIST/PeopleOverlay_v3_YOLO26n_x64.exe
           if ($LASTEXITCODE -ne 0) { throw "v3 packing failed" }
+          python scripts/package_current.py --application _v3_benchmark_app.exe --donor BASE8/PeopleOverlay_Win7_NCNN_x64.exe --output DIST/PeopleOverlay_v3_YOLOv8n_x64.exe
+          if ($LASTEXITCODE -ne 0) { throw "v3 YOLOv8n pack failed" }
       - name: Build unchanged v1.9 baseline with identical benchmark harness
         shell: pwsh
         run: |
@@ -78,19 +87,27 @@ jobs:
         run: python scripts/pets2009_person_body_replay.py --output _pets_real_fixture --fps 15 --duration 7
       - name: Replay real filmed body bounding boxes through both packed Windows EXEs
         run: python scripts/run_pixel_benchmarks.py --exe v19=DIST/v19-benchmark-x64.exe --exe v3=DIST/PeopleOverlay_v3_YOLO26n_x64.exe --fixtures _pets_real_fixture --output evidence/replay
+      - name: Replay the exact same filmed people through YOLOv8n fallback
+        run: python scripts/run_pixel_benchmarks.py --exe v3v8=DIST/PeopleOverlay_v3_YOLOv8n_x64.exe --fixtures _pets_real_fixture --output evidence/replay
       - name: Score full-body precision recall missed arrivals ID stability and delays
         shell: pwsh
         run: |
           $reports = @(Get-ChildItem evidence/replay/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName })
           if ($reports.Count -ne 8) { throw "Expected 8 full person-body replay reports, got $($reports.Count)" }
-          python scripts/evaluate_pixel_benchmark.py @reports --output evidence/comparison.json
+          $baselineAndV3 = @($reports | Where-Object { (Split-Path $_ -Leaf) -match '^(v19|v3)-' })
+          python scripts/evaluate_pixel_benchmark.py @baselineAndV3 --output evidence/comparison.json
           if ($LASTEXITCODE -ne 0) { throw "Real-body evaluator failed" }
+          python scripts/evaluate_pixel_benchmark.py @reports --output evidence/model-comparison.json
+          if ($LASTEXITCODE -ne 0) { throw "Multi-model evaluator failed" }
       - name: Generate human-readable real CCTV report and flag regressions
         shell: pwsh
         run: |
           python scripts/cctv_v3_summary.py evidence/comparison.json --out evidence/REPORT.md
           if ($LASTEXITCODE -ne 0) { throw "Reporting failed" }
+          python scripts/cctv_model_comparison.py evidence/model-comparison.json --out evidence/MODELS.md
+          if ($LASTEXITCODE -ne 0) { throw "Model comparison failed" }
           Get-Content evidence/REPORT.md
+          Get-Content evidence/MODELS.md
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -99,5 +116,6 @@ jobs:
             evidence/
             _pets_real_fixture/PETS2009_PROVENANCE.json
             DIST/PeopleOverlay_v3_YOLO26n_x64.bundle.json
+            DIST/PeopleOverlay_v3_YOLOv8n_x64.bundle.json
             DIST/v19-benchmark-x64.bundle.json
           retention-days: 90
