@@ -69,4 +69,9 @@ if __name__=="__main__":
     report=make_report(json.loads(args.comparison.read_text(encoding="utf-8-sig")))
     args.out.parent.mkdir(parents=True,exist_ok=True)
     args.out.write_text(report,encoding="utf-8")
+    import sys
+    # Windows GitHub runners often default to CP1252; non-ASCII report glyphs
+    # must never turn a completed real-video benchmark into an apparent failure.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     print(report)
