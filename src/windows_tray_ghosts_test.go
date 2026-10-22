@@ -23,6 +23,10 @@ func TestV3UnverifiedCornersHideButTrackRetained(t *testing.T){
  tr.layout(1920,1080,4)
  tr.people=[]personTrack{{ID:1,Box:Rect{X:75,Y:65,W:40,H:95},State:trackConfirmed,AIHits:2,LastAI:now,LastVisual:now}}
  if len(tr.views(now))!=1{t.Fatal("confirmed person not drawn")}
+ // The image matcher can keep reporting the OLD background as visually
+ // stationary even though there has been no new neural person confirmation.
+ // That old track is useful for matching, but must not be drawn.
+ tr.people[0].LastVisual=now.Add(3000*time.Millisecond)
  if len(tr.views(now.Add(3100*time.Millisecond)))!=0{t.Fatal("stale 4x4 corners visible after 3 seconds with no AI")}
  if len(tr.people)!=1{t.Fatal("track should survive unseen internally for safe reacquisition")}
  // A fresh neural re-observation re-enables the existing ID.
