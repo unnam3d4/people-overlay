@@ -45,33 +45,6 @@ func regionsForProfile(w,h int,profile int32)[]scanRegion{
  return regs
 }
 
-// ROI offsets are physical pixels inside one monitor. VMS navigation panels
-// and title bars are deliberately excluded from each camera crop in Auto.
-// Manual modes preserve regionsForProfile and their historical geometry.
-func regionsForViewport(w,h int,profile int32,view scanRegion)[]scanRegion{
- if w<1||h<1||profile==0{return regionsForProfile(w,h,profile)}
- if view.x<0||view.y<0||view.w<1||view.h<1||view.x+view.w>w||view.y+view.h>h{
-  return regionsForProfile(w,h,profile)
- }
- if view.x==0&&view.y==0&&view.w==w&&view.h==h{return regionsForProfile(w,h,profile)}
- grid:=v3GridColumns(profile)
- if grid<2{return regionsForProfile(w,h,profile)}
- regs:=make([]scanRegion,0,grid*grid+1)
- regs=append(regs,scanRegion{0,0,w,h})
- for row:=0;row<grid;row++{for col:=0;col<grid;col++{
-  x1:=view.x+col*view.w/grid
-  x2:=view.x+(col+1)*view.w/grid
-  y1:=view.y+row*view.h/grid
-  y2:=view.y+(row+1)*view.h/grid
-  padX:=maxScan(8,(x2-x1)*12/100)
-  padY:=maxScan(8,(y2-y1)*12/100)
-  x1=maxScan(view.x,x1-padX);x2=minScan(view.x+view.w,x2+padX)
-  y1=maxScan(view.y,y1-padY);y2=minScan(view.y+view.h,y2+padY)
-  regs=append(regs,scanRegion{x1,y1,x2-x1,y2-y1})
- }}
- return regs
-}
-
 // Fullscreen precision experiment: keep the original whole-camera 640x640
 // neural scan, and additionally inspect four overlapping zoomed quadrants.
 // The extra passes can recover distant people that downscaling the entire
