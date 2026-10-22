@@ -9,6 +9,9 @@ on:
       - 'src/vertical_pairs_windows_test.go'
       - 'scripts/pets_pair_experiment.py'
       - 'scripts/cctv_paired_comparison.py'
+      - 'src/tracker.go'
+      - 'src/association.go'
+      - 'scripts/cctv_tight_boxes_comparison.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -61,10 +64,14 @@ jobs:
         run: python scripts/pets2009_person_body_replay.py --output _pets_real_fixture --fps 15 --duration 7
       - name: Run normal one-camera-per-AI-call mode on filmed people
         run: python scripts/run_pixel_benchmarks.py --exe v3v8=_v3_experiment_packed.exe --fixtures _pets_real_fixture --output results/replay --scenario grid4_four_feeds --scenario grid4_sixteen_feeds
+      - name: Run standard single-camera NN temporal tracking baseline
+        run: python scripts/run_pixel_benchmarks.py --exe v3v8=_v3_experiment_packed.exe --fixtures _pets_real_fixture --output results/single-normal --scenario single_
       - name: Generate manifest with exact same pixels but vertical two-camera crops
         run: python scripts/pets_pair_experiment.py --fixtures _pets_real_fixture
       - name: Run paired 8 crop mode on identical filmed people and identical EXE
         run: python scripts/run_pixel_benchmarks.py --exe v3v8=_v3_experiment_packed.exe --fixtures _pets_real_fixture --output results/replay --scenario paired_
+      - name: Run tight AI-box geometry for same single-camera footage
+        run: python scripts/run_pixel_benchmarks.py --exe v3v8=_v3_experiment_packed.exe --fixtures _pets_real_fixture --output results/single-tight --scenario tight_pets2009_
       - name: Evaluate complete person-body matching and missed appearances
         shell: pwsh
         run: |
@@ -75,6 +82,14 @@ jobs:
           python scripts/cctv_paired_comparison.py results/scored.json --out results/PAIRED-RESULTS.md
           if ($LASTEXITCODE -ne 0) {throw "Paired comparison failed"}
           Get-Content results/PAIRED-RESULTS.md
+          $normal=@(Get-ChildItem results/single-normal/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName })
+          $tight=@(Get-ChildItem results/single-tight/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName })
+          if ($normal.Count -ne 2 -or $tight.Count -ne 2) {throw "Expected 2 normal and 2 tight single-camera results"}
+          python scripts/evaluate_pixel_benchmark.py @normal @tight --output results/tight-scored.json
+          if ($LASTEXITCODE -ne 0) {throw "Tight AI box evaluator failed"}
+          python scripts/cctv_tight_boxes_comparison.py results/tight-scored.json --out results/TIGHT-RESULTS.md
+          if ($LASTEXITCODE -ne 0) {throw "Tight AI box comparison failed"}
+          Get-Content results/TIGHT-RESULTS.md
       - uses: actions/upload-artifact@v4
         if: always()
         with:
