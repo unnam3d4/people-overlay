@@ -332,8 +332,8 @@ func (t *appTray) action(id uintptr) {
         index:=int32(id-menuIDMonitorStart)
         if index < int32(len(monitorList())) && displaySelection.Load()!=index {
             displaySelection.Store(index)
-            configurationGeneration.Add(1) // reject in-flight old-display AI
-            version.Add(1) // reposition overlay even for equal-size displays
+            // This is diagnostic-only; do not invalidate running detection
+            // on any of the four physical screens.
             probeReady.Store(false)
             logError(fmt.Errorf("Diagnostic screenshot target switched to monitor %d",index+1))
         }
