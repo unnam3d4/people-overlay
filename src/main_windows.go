@@ -158,6 +158,7 @@ var showNumbers atomic.Bool
 var alarmEnabled atomic.Bool
 var alarmFull atomic.Bool
 var fastAI atomic.Bool
+var v3FullAccuracy atomic.Bool // fast fullscreen AI, separate from economical CCTV grids
 var alarmPauseSecs atomic.Int32
 var lastInferenceMS atomic.Int64
 var lastCaptureUS atomic.Int64
@@ -547,6 +548,7 @@ func main() {
 	enabled.Store(true)
 	colour.Store(1)
 	scanMode.Store(-1) // auto: precise fullscreen first, grid only after confirming boundaries
+    v3FullAccuracy.Store(true) // validated on real PETS2009; can be disabled on weak CPUs
 	sensitivity.Store(2)
 	alarmEnabled.Store(true)
 	alarmPauseSecs.Store(30)
