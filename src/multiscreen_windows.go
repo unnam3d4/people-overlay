@@ -110,6 +110,31 @@ func v3Publish(screens []*v3Screen, union desktopRect, now time.Time, last *[]Tr
     }
 }
 
+// Actual camera coverage rather than optimistic promised detection latency.
+// A zero scan timestamp is an unseen camera; measure how long it has remained
+// unseen since the scheduler started. Per-screen screen cuts reset only its
+// timestamps, never claim that an absent inference has inspected a camera.
+func v3CameraCoverage(screens []*v3Screen, now time.Time) (unseen int, oldest time.Duration) {
+    for _, screen := range screens {
+        if screen == nil {continue}
+        start:=1
+        if len(screen.sch.lastScan)==1 {start=0}
+        for i:=start;i<len(screen.sch.lastScan);i++ {
+            scanAt:=screen.sch.lastScan[i]
+            if scanAt.IsZero() {
+                unseen++
+                scanAt=screen.sch.firstDecision
+            }
+            if scanAt.IsZero() {continue}
+            if age:=now.Sub(scanAt);age>oldest {
+                oldest=age
+            }
+        }
+    }
+    if oldest<0 {oldest=0}
+    return unseen,oldest
+}
+
 // Only apply a delayed neural result to the physical screen and scene
 // generation it was captured from. Topology changes and hard scene cuts
 // invalidate only their matching requests.
@@ -172,6 +197,8 @@ func v3Analyze(detector *Detector) {
         lastPublished=nil
         trackedCount.Store(0)
         pendingCamera.Store(0)
+        v3UnvisitedCameras.Store(0)
+        v3WorstCameraAgeMS.Store(0)
         tentativeCount.Store(0)
         confirmedCount.Store(0)
         lostCount.Store(0)
@@ -360,6 +387,9 @@ func v3Analyze(detector *Detector) {
             }
         }
         v3Publish(screens,union,now,&lastPublished)
+        unseen,worst:=v3CameraCoverage(screens,now)
+        v3UnvisitedCameras.Store(int32(unseen))
+        v3WorstCameraAgeMS.Store(worst.Milliseconds())
         cadence:=v3CaptureCadence(profile,len(screens),len(s.tracker.people)>0,fastAI.Load())
         if elapsed:=time.Since(start);elapsed<cadence{time.Sleep(cadence-elapsed)}
     }
