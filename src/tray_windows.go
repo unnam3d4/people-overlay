@@ -251,6 +251,15 @@ func (t *appTray) popupMenu() {
 	trayAppendMenu.Call(menu, menuString|1, 0, uintptr(unsafe.Pointer(timingText)))
 	stateText := syscall.StringToUTF16Ptr(fmt.Sprintf("Ожидают: %d / подтверждены: %d / потеряны: %d | AI камера: %d", tentativeCount.Load(), confirmedCount.Load(), lostCount.Load(), pendingCamera.Load()))
 	trayAppendMenu.Call(menu, menuString|1, 0, uintptr(unsafe.Pointer(stateText)))
+    blind:=v3WorstCameraAgeMS.Load()
+    unchecked:=v3UnvisitedCameras.Load()
+    // A diagnostic report, not a guaranteed recognition interval.
+    // A displayed >2000ms means the requested 2s detection objective is
+    // currently infeasible for at least one camera on this PC.
+    coverage:=fmt.Sprintf("Камеры без AI-проверки: %d | макс. возраст AI-проверки: %.1f с",unchecked,float64(blind)/1000)
+    coverageText:=syscall.StringToUTF16Ptr(coverage)
+    trayAppendMenu.Call(menu,menuString|1,0,uintptr(unsafe.Pointer(coverageText)))
+
 	separator(menu)
 	appendMenu(menu, menuIDProfileSingle, "Режим: одна камера на весь экран", scanMode.Load() == 0)
 	appendMenu(menu, menuIDProfileEco, "Режим: экономный (2×2)", scanMode.Load() == 1)
