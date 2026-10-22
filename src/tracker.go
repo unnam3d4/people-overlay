@@ -39,6 +39,9 @@ type personTrack struct {
 	CreatedAt            time.Time
 	TentativeUntil       time.Time
 	LastPositiveCapture  time.Time
+    // Only a delayed AI result re-verified against CURRENT screen pixels
+    // may temporarily outlive its old capture timestamp on the overlay.
+    LastDeliveredVerified time.Time
 	AIHits               int
 }
 
@@ -684,6 +687,7 @@ func (t *personTracker) observePeopleFromCapture(found []Rect, captured []TrackV
 					p.Box.Y += dy
 					p.Tile = t.tileOf(p.Box)
 					p.LastVisual = t.grayAt
+                    p.LastDeliveredVerified = now
 				}
 			}
 			break
@@ -817,15 +821,17 @@ func (t *personTracker) drawableTrack(p personTrack, now time.Time) bool {
     if !t.confirmationRequired {return true}
     if p.AIMisses>0 || p.LastAI.IsZero() {return false}
     aiAge:=now.Sub(p.LastAI)
-    visualAge:=now.Sub(p.LastVisual)
-    if aiAge<0 || visualAge<0 {return false}
-    maxAIVisible:=1900*time.Millisecond
-    if t.columns==4 {maxAIVisible=3000*time.Millisecond}
-    if aiAge>maxAIVisible {return false}
-    // Lost texture cannot remain painted merely because a slow 4x4
-    // mosaic has not scheduled the person's tile again.
-    if visualAge>850*time.Millisecond && aiAge>850*time.Millisecond {return false}
-    return true
+    if aiAge<0{return false}
+    // 4x4 real-world CPU round trips last 1.2-2s. Prevent all tracks from
+    // blinking on those measured revisits while bounding stale marker life.
+    if aiAge<=2600*time.Millisecond{return true}
+    // A delayed inference (e.g. 4s) is useful only if its original captured
+    // human texture was matched against the current live pixels on delivery.
+    // It gets a very short paint allowance; ordinary stationary background
+    // matching cannot renew this timestamp indefinitely.
+    return !p.LastDeliveredVerified.IsZero() &&
+        now.Sub(p.LastDeliveredVerified)<=200*time.Millisecond &&
+        now.Sub(p.LastVisual)<=200*time.Millisecond
 }
 
 func (t *personTracker) views(now time.Time) []TrackView {
@@ -840,7 +846,7 @@ func (t *personTracker) views(now time.Time) []TrackView {
         // merge generally overlapping humans.
         duplicate:=-1
         for i,v:=range views {
-            if sameSilhouette(v.Box,p.Box) {
+            if t.confirmationRequired && sameSilhouette(v.Box,p.Box) {
                 duplicate=i
                 break
             }
