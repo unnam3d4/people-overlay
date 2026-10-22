@@ -20,12 +20,9 @@ type v3Screen struct {
     alarm alarmGate
     epoch uint64
     profile int32
-    viewport scanRegion
     candidateProfile int32
-    candidateViewport scanRegion
     candidateVotes int
     layoutAt time.Time
-    lastProfileChange time.Time
     captureFailures int
     // AI completed on this screen; dispatch does not count as detection.
     completed []time.Time
@@ -100,7 +97,7 @@ func v3CreateScreens(screen uintptr, rects []desktopRect, profile int32, epoch u
             for _,s:=range screens {s.snap.close()}
             return nil,err
         }
-        s:=&v3Screen{rect:rect,snap:snap,epoch:epoch,profile:profile,viewport:scanRegion{0,0,w,h}}
+        s:=&v3Screen{rect:rect,snap:snap,epoch:epoch,profile:profile}
         s.regions=regionsForProfile(w,h,profile)
         s.completed=make([]time.Time,len(s.regions))
         s.sch.reset(len(s.regions),w,h,profile)
@@ -124,33 +121,6 @@ func v3SetScreenProfile(s *v3Screen,profile int32,epoch uint64) {
     s.sch.reset(len(s.regions),s.snap.w,s.snap.h,profile)
     s.completed=make([]time.Time,len(s.regions))
     s.alarm.resetScene()
-}
-
-func v3SameViewport(a,b scanRegion,w,h int)bool{
-    toleranceX:=maxScan(8,w/75)
-    toleranceY:=maxScan(8,h/75)
-    abs:=func(x int)int{if x<0{return -x};return x}
-    return abs(a.x-b.x)<=toleranceX &&
-           abs(a.y-b.y)<=toleranceY &&
-           abs(a.w-b.w)<=toleranceX &&
-           abs(a.h-b.h)<=toleranceY
-}
-
-// Manual modes continue using the original regions. Only the Auto mode
-// supplies measured viewport geometry and updates all THREE users of it:
-// AI crops, camera-owner/track ID assignment, and motion scheduler.
-func v3SetScreenProfileViewport(s *v3Screen,profile int32,view scanRegion,epoch uint64){
-    if view.w<1||view.h<1||view.x<0||view.y<0||
-       view.x+view.w>s.snap.w||view.y+view.h>s.snap.h {
-        view=scanRegion{0,0,s.snap.w,s.snap.h}
-    }
-    v3SetScreenProfile(s,profile,epoch)
-    s.viewport=view
-    s.regions=regionsForViewport(s.snap.w,s.snap.h,profile,view)
-    s.sch.reset(len(s.regions),s.snap.w,s.snap.h,profile)
-    s.sch.setViewport(view)
-    s.tracker.setViewport(view)
-    s.completed=make([]time.Time,len(s.regions))
 }
 
 func v3Publish(screens []*v3Screen, union desktopRect, now time.Time, last *[]TrackView) {
@@ -358,7 +328,7 @@ func v3Analyze(detector *Detector) {
                 if result.err!=nil {logError(result.err);nextInfer=now.Add(time.Second);continue}
                 idx:=regionIndex(s.regions,result.zone)
                 if idx<0 {continue}
-                found:=v3KeepCameraDetectionsViewport(result.detected,idx,v3GridColumns(s.profile),s.viewport)
+                found:=v3KeepCameraDetections(result.detected,idx,s.snap.w,s.snap.h,s.profile)
                 s.sch.markScannedPeople(idx,now,found)
                 s.completed[idx]=now
                 s.tracker.observePeopleFromCapture(found,result.captured,result.pixels,result.zone,result.capturedAt,now)
@@ -398,7 +368,6 @@ func v3Analyze(detector *Detector) {
                 s.epoch=epoch // reject any AI result from the failed capture
                 s.tracker.reset()
                 s.sch.reset(len(s.regions),w,h,profile)
-                s.sch.setViewport(s.viewport)
                 s.completed=make([]time.Time,len(s.regions))
                 s.alarm.resetScene()
                 v3Publish(screens,union,time.Now(),&lastPublished)
@@ -416,26 +385,18 @@ func v3Analyze(detector *Detector) {
         pGdiFlush.Call()
         if configuredProfile==-1 && now.Sub(s.layoutAt)>850*time.Millisecond {
             s.layoutAt=now
-            detected,videoArea:=v3RecognizeLayoutGeometry(s.snap.pixels,w,h)
-            if detected==s.candidateProfile && v3SameViewport(videoArea,s.candidateViewport,w,h) {
+            detected:=v3RecognizeLayout(s.snap.pixels,w,h)
+            if detected==s.candidateProfile {
                 s.candidateVotes++
             } else {
                 s.candidateProfile=detected
-                s.candidateViewport=videoArea
                 s.candidateVotes=1
             }
-            geometryChanged:=detected==s.profile &&
-                !v3SameViewport(videoArea,s.viewport,w,h)
-            shouldChange:=v3AutoLayoutSwitch(detected,s.profile,s.candidateVotes,now.Sub(s.lastProfileChange))
-            if geometryChanged && s.candidateVotes>=4 &&
-                now.Sub(s.lastProfileChange)>=3500*time.Millisecond {shouldChange=true}
-            if shouldChange {
+            if s.candidateVotes>=2 && detected!=s.profile {
                 // Only invalidate the affected monitor; an in-flight result
                 // from another monitor remains valid.
                 epoch++
-                v3SetScreenProfileViewport(s,detected,videoArea,epoch)
-                s.lastProfileChange=now
-                s.candidateVotes=0
+                v3SetScreenProfile(s,detected,epoch)
                 aiServed=make([]int,len(screens))
                 nextAI=slot // immediately prioritize newly expanded RVi camera
                 profile=s.profile
@@ -483,10 +444,8 @@ func v3Analyze(detector *Detector) {
             s.epoch=epoch
             s.tracker.reset()
             s.tracker.layout(w,h,v3GridColumns(profile))
-            s.tracker.setViewport(s.viewport)
             s.alarm.resetScene()
             s.sch.reset(len(s.regions),w,h,profile)
-            s.sch.setViewport(s.viewport)
             s.completed=make([]time.Time,len(s.regions))
             nextInfer=time.Time{}
         }
