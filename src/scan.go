@@ -45,6 +45,28 @@ func regionsForProfile(w,h int,profile int32)[]scanRegion{
  return regs
 }
 
+// Fullscreen precision experiment: keep the original whole-camera 640x640
+// neural scan, and additionally inspect four overlapping zoomed quadrants.
+// The extra passes can recover distant people that downscaling the entire
+// original 720p frame makes too small. This does not add pixels absent from RVi.
+func v3FullDetailRegions(w,h int) []scanRegion {
+    if w<64||h<64{return nil}
+    regions:=[]scanRegion{{0,0,w,h}}
+    xpad,ypad:=w/15,h/15
+    for row:=0;row<2;row++{
+        for col:=0;col<2;col++ {
+            x1,x2:=col*w/2,(col+1)*w/2
+            y1,y2:=row*h/2,(row+1)*h/2
+            if x1>xpad{x1-=xpad}else{x1=0}
+            if y1>ypad{y1-=ypad}else{y1=0}
+            if x2+xpad<w{x2+=xpad}else{x2=w}
+            if y2+ypad<h{y2+=ypad}else{y2=h}
+            regions=append(regions,scanRegion{x1,y1,x2-x1,y2-y1})
+        }
+    }
+    return regions
+}
+
 // copyRegionBGRA snapshots only one selected camera crop, not the full
 // desktop. The 640x640 conversion runs in the AI goroutine after this copy.
 // Each row is copied before BitBlt may overwrite the shared source DIB.
