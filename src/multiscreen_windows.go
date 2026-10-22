@@ -119,6 +119,17 @@ func v3AcceptReply(screens []*v3Screen, result inferenceReply) bool {
     return s!=nil && s.epoch==result.epoch
 }
 
+func v3CaptureCadence(profile int32, screens int, hasPeople, fast bool) time.Duration {
+    cadence:=frameCadence(profile,hasPeople,fast)
+    // Original v20 waits 300 ms on a quiet scene. With four monitors that
+    // would sample each screen only every 1.2 seconds, before inference.
+    // Bound aggregate per-screen capture latency without spinning at 60 FPS.
+    if screens>1 && cadence>110*time.Millisecond {
+        return 110*time.Millisecond
+    }
+    return cadence
+}
+
 // v3Analyze replaces single-display analyze(), retaining production NCNN,
 // timestamp-anchored detections, tracking checks and the anti-noise alarm.
 func v3Analyze(detector *Detector) {
@@ -348,7 +359,7 @@ func v3Analyze(detector *Detector) {
             }
         }
         v3Publish(screens,union,now,&lastPublished)
-        cadence:=frameCadence(profile,len(s.tracker.people)>0,fastAI.Load())
+        cadence:=v3CaptureCadence(profile,len(screens),len(s.tracker.people)>0,fastAI.Load())
         if elapsed:=time.Since(start);elapsed<cadence{time.Sleep(cadence-elapsed)}
     }
 }
