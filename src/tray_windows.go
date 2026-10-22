@@ -257,15 +257,17 @@ func (t *appTray) popupMenu() {
 	appendMenu(menu, menuIDProfileBalanced, "Режим: сбалансированный (3×3)", scanMode.Load() == 2)
 	appendMenu(menu, menuIDProfileCCTV, "Режим: видеонаблюдение (4×4)", scanMode.Load() == 3)
     separator(menu)
-    // The user chooses which physical screen actually displays RVi.
-    // Do NOT scan the virtual desktop as one huge CCTV mosaic.
+    // v3 always scans up to four physical monitors. These radio commands
+    // choose ONLY the target for local screenshot/capture diagnostics.
+    infoAll:=syscall.StringToUTF16Ptr("Детекция: на всех экранах (до 4)")
+    trayAppendMenu.Call(menu,menuString|1,0,uintptr(unsafe.Pointer(infoAll)))
     monitors:=monitorList()
-    if len(monitors)>16 {monitors=monitors[:16]}
+    if len(monitors)>4 {monitors=monitors[:4]}
     selection:=displaySelection.Load()
     for i,m:=range monitors {
         suffix:=""
         if m.Primary { suffix=" (основной)" }
-        caption:=fmt.Sprintf("Экран %d%s — %dx%d, x=%d y=%d",i+1,suffix,m.Rect.width(),m.Rect.height(),m.Rect.Left,m.Rect.Top)
+        caption:=fmt.Sprintf("Снимок: экран %d%s — %dx%d",i+1,suffix,m.Rect.width(),m.Rect.height())
         appendMenu(menu,menuIDMonitorStart+uintptr(i),caption,selection==int32(i))
     }
 	separator(menu)
@@ -287,7 +289,6 @@ func (t *appTray) popupMenu() {
 	appendMenu(menu, menuIDRed, "Цвет: красный", colour.Load() == 2)
 	appendMenu(menu, menuIDOrange, "Цвет: оранжевый", colour.Load() == 3)
 	separator(menu)
-	appendMenu(menu, menuIDNumbers, "Показывать номера людей", showNumbers.Load())
 	appendMenu(menu, menuIDCapture, "Сохранить проверочный кадр", false)
 	appendMenu(menu, menuIDCaptureCompat, "Захват видео: совместимый режим (CAPTUREBLT)", captureCompat.Load())
 	appendMenu(menu, menuIDVideoProbe, "Проверить видеокадры (2 снимка за 1,4 сек)", false)
@@ -327,14 +328,14 @@ func (t *appTray) popupMenu() {
 	}
 }
 func (t *appTray) action(id uintptr) {
-    if id>=menuIDMonitorStart && id<menuIDMonitorStart+16 {
+    if id>=menuIDMonitorStart && id<menuIDMonitorStart+4 {
         index:=int32(id-menuIDMonitorStart)
         if index < int32(len(monitorList())) && displaySelection.Load()!=index {
             displaySelection.Store(index)
             configurationGeneration.Add(1) // reject in-flight old-display AI
             version.Add(1) // reposition overlay even for equal-size displays
             probeReady.Store(false)
-            logError(fmt.Errorf("Capture switched to monitor %d; previous AI tracks invalidated",index+1))
+            logError(fmt.Errorf("Diagnostic screenshot target switched to monitor %d",index+1))
         }
         return
     }
