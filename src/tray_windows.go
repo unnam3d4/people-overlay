@@ -39,6 +39,7 @@ const (
 	menuIDVideoProbe      = 154
 	menuIDCaptureCompat   = 155
 	menuIDFastAI          = 159
+    menuIDFullAccuracy    = 157
 	menuIDAlarmToggle     = 160
 	menuIDAlarmShort      = 161
 	menuIDAlarmFull       = 162
@@ -286,7 +287,8 @@ func (t *appTray) popupMenu() {
 	appendMenu(menu, menuIDSensNormal, "Чувствительность: обычная", sensitivity.Load() == 2)
 	appendMenu(menu, menuIDSensHigh, "Чувствительность: высокая", sensitivity.Load() == 3)
 	appendMenu(menu, menuIDContrast, "Усилить контраст камер", contrastMode.Load())
-	appendMenu(menu, menuIDFastAI, "Быстрое сопровождение: до 15 Гц (больше нагрузка CPU)", fastAI.Load())
+	appendMenu(menu, menuIDFullAccuracy, "Точный полный экран: больше AI-проверок (нагрузка CPU)",v3FullAccuracy.Load())
+    appendMenu(menu, menuIDFastAI, "Быстрое сопровождение: до 15 Гц (больше нагрузка CPU)", fastAI.Load())
 	separator(menu)
 	appendMenu(menu, menuIDAlarmToggle, "Звуковая тревога (Ctrl+Alt+F7)", alarmEnabled.Load())
 	appendMenu(menu, menuIDAlarmShort, "Сигнал: короткий, 3 импульса", !alarmFull.Load())
@@ -384,7 +386,9 @@ func (t *appTray) action(id uintptr) {
 		sensitivity.Store(3)
 	case menuIDContrast:
 		contrastMode.Store(!contrastMode.Load())
-	case menuIDFastAI:
+	case menuIDFullAccuracy:
+        v3FullAccuracy.Store(!v3FullAccuracy.Load())
+    case menuIDFastAI:
 		fastAI.Store(!fastAI.Load())
 	case menuIDAlarmToggle:
 		alarmEnabled.Store(!alarmEnabled.Load())
