@@ -165,3 +165,23 @@ func TestV3PrecisionFullscreenDoesNotThrottleNewPersonChecks(t *testing.T) {
         t.Fatal("low CPU mode must be available for older Windows i3 machines")
     }
 }
+
+// FastTracking is opt-in: on 16-camera mosaics it eliminates the deliberate
+// inter-inference idle time without changing the default low-CPU mode.
+func TestV3FastTrackingSkipsFourByFourIdleOnlyWhenEnabled(t *testing.T) {
+    busy:=250*time.Millisecond
+    standard:=v3FastAIPause(3,busy,true,false)
+    if standard<50*time.Millisecond {
+        t.Fatalf("economical 4x4 unexpectedly lost its throttle: %s",standard)
+    }
+    if got:=v3FastAIPause(3,busy,true,true);got!=0{
+        t.Fatalf("opt-in 4x4 fast tracking must not idle AI worker: %s",got)
+    }
+    for _,profile:=range []int32{0,1,2}{
+        got:=v3FastAIPause(profile,busy,false,true)
+        want:=v3AIPause(profile,busy,false)
+        if got!=want {
+            t.Fatalf("fast 4x4 setting must not change profile %d: got %s want %s",profile,got,want)
+        }
+    }
+}
