@@ -122,3 +122,26 @@ func TestV3CameraCoverageRespectsUnseenAndSeparateScreens(t *testing.T) {
         t.Fatalf("scanning one CCTV camera must not erase all unseen ages: %d %v",unseen,age)
     }
 }
+
+func TestV3FullscreenWinsMoreNeuralSlotsWithoutGridStarvation(t *testing.T) {
+    screens:=[]*v3Screen{{profile:0},{profile:3},{profile:2},{profile:1}}
+    served:=make([]int,4)
+    last:=-1
+    for i:=0;i<120;i++{
+        next:=v3SelectNextAI(screens,served,last)
+        if next<0||next>3 {t.Fatalf("bad screen index %d",next)}
+        served[next]++
+        last=next
+    }
+    if served[0]<48 || served[0]>64 {
+        t.Fatalf("single expanded CCTV must win about half NN budget, got %+v",served)
+    }
+    for i:=1;i<4;i++ {
+        if served[i]<15 {t.Fatalf("grid monitor %d starved: %+v",i,served)}
+    }
+    screens[0].captureFailures=3
+    next:=v3SelectNextAI(screens,served,3)
+    if next==0 {t.Fatal("broken screenshot may not block other monitors")}
+    screens[0].captureFailures=0
+    if len(v3AllRects(nil))!=0 {t.Fatal("unexpected display")}
+}
