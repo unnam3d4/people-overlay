@@ -94,11 +94,11 @@ jobs:
           Windows 7 and 10 targeted; real Windows 7 and four physical monitor RVi tests NOT COMPLETED.
           Runs offline; no Python required on test PC.
           EXE uses monitor union, four independent capture/tracking contexts and one shared CPU NCNN worker.
-          Only run ONE EXE: choose x64 or x86, YOLO26n or YOLOv8n fallback.
+          Only run ONE EXE: choose x64 or x86, YOLOv8n RECOMMENDED; YOLO26n manual fallback.
           Ctrl+Alt+F9: toggle. Ctrl+Alt+F10: exit. Ctrl+Alt+F7: mute.
           Tray -> capture screenshot monitor selector: diagnostic ONLY, detection runs on all displays.
           WARNING: Up to 48 camera tiles and two-second detection NOT performance-validated.
-          WARNING: v20 had poor person-body recall on PETS2009; v3 has no validated improvement yet.
+          WARNING: v3 YOLOv8n achieved only ~8.2% whole-body recall on 16-feed PETS replay; NOT fit for unattended safety/security alerts.
           Never rely on trial as sole surveillance/safety system.
           '@ | Out-File RELEASE/READ-ME-FIRST.txt -Encoding utf8
           Compress-Archive -Path RELEASE/* -DestinationPath PeopleOverlay_v3_EXPERIMENTAL_OFFLINE.zip
