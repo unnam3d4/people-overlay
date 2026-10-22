@@ -37,6 +37,7 @@ type benchmarkManifest struct {
 	Profile     int32             `json:"profile"`
 	// Research-only paired-vertical CCTV crop experiment; never enabled in normal RVi automatically.
 	PairedCCTV bool `json:"paired_cctv,omitempty"`
+    TightAIBoxes bool `json:"tight_ai_boxes,omitempty"`
 	Sensitivity int32             `json:"sensitivity"`
 	Threads     int               `json:"threads"`
 	Contrast    bool              `json:"contrast"`
@@ -272,6 +273,12 @@ func runBenchmarkCLI(args []string) error {
 	if configurable, ok := interface{}(&tracker).(interface{ enableConfirmation() }); ok {
 		configurable.enableConfirmation()
 	}
+    // Optional A/B only, older v1.9 benchmark source compiles unchanged.
+    if manifest.TightAIBoxes {
+        if cfg,ok:=interface{}(&tracker).(interface{enableTightBoxes()});ok{
+            cfg.enableTightBoxes()
+        }
+    }
 	viewsForScheduler := func(now time.Time) []TrackView {
 		if candidates, ok := interface{}(&tracker).(interface{ schedulerViews(time.Time) []TrackView }); ok {
 			return candidates.schedulerViews(now)
