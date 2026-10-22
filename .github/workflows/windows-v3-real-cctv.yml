@@ -7,6 +7,10 @@ on:
       - 'scripts/pets2009_person_body_replay.py'
       - 'scripts/evaluate_pixel_benchmark.py'
       - 'scripts/cctv_v3_summary.py'
+      - 'src/scheduler.go'
+      - 'src/benchmark_windows.go'
+      - 'src/multiscreen_windows.go'
+      - 'src/scheduler_coverage_test.go'
   workflow_dispatch:
 permissions:
   contents: read
@@ -37,12 +41,20 @@ jobs:
           name: PeopleOverlay_v1.9_YOLO26n_Win7_11_Verified
           github-token: ${{ github.token }}
           path: BASE26
-      - uses: actions/download-artifact@v4
-        with:
-          run-id: 39765359100
-          name: v3-portable-unverified-internal
-          github-token: ${{ github.token }}
-          path: DIST
+      - name: Build this exact v3 commit as Windows x64 with no CGO
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force DIST | Out-Null
+          $env:CGO_ENABLED='0'
+          $env:GOARCH='amd64'
+          Push-Location src
+          go test -tags ncnn ./... -count=1
+          if ($LASTEXITCODE -ne 0) { throw "v3 Windows x64 unit tests failed" }
+          go build -tags ncnn -trimpath -ldflags '-s -w -H windowsgui' -o ../_v3_benchmark_app.exe .
+          if ($LASTEXITCODE -ne 0) { throw "v3 Windows x64 build failed" }
+          Pop-Location
+          python scripts/package_current.py --application _v3_benchmark_app.exe --donor BASE26/PeopleOverlay_v1.9_YOLO26n_x64.exe --output DIST/PeopleOverlay_v3_YOLO26n_x64.exe
+          if ($LASTEXITCODE -ne 0) { throw "v3 packing failed" }
       - name: Build unchanged v1.9 baseline with identical benchmark harness
         shell: pwsh
         run: |
