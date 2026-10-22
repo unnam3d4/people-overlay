@@ -95,3 +95,23 @@ func TestV3PublishIndependentScreenCoordinatesAndIds(t *testing.T) {
     if got[0].Box.X!=15 || got[0].Box.Y!=20 {t.Fatalf("left origin misaligned: %+v",got[0])}
     if got[1].Box.X!=825 || got[1].Box.Y!=135 {t.Fatalf("right monitor origin misaligned: %+v",got[1])}
 }
+
+func TestV3CameraCoverageRespectsUnseenAndSeparateScreens(t *testing.T) {
+    now:=time.Unix(1700000020,0)
+    monitors:=[]*v3Screen{{},{},{}}
+    monitors[0].sch.lastScan=make([]time.Time,17)
+    monitors[0].sch.firstDecision=now.Add(-4*time.Second)
+    monitors[0].sch.lastScan[1]=now.Add(-2*time.Second)
+    monitors[1].sch.lastScan=make([]time.Time,1) // fullscreen is one camera
+    monitors[1].sch.firstDecision=now.Add(-time.Second)
+    monitors[2].sch.lastScan=make([]time.Time,1)
+    monitors[2].sch.markScanned(0,now.Add(-3*time.Second),false)
+    unseen,age:=v3CameraCoverage(monitors,now)
+    if unseen!=16 {t.Fatalf("expected 15 unseen 4x4 tiles and 1 fullscreen tile: %d",unseen)}
+    if age!=4*time.Second {t.Fatalf("unseen camera deadline must be 4s, got %v",age)}
+    monitors[0].sch.markScanned(2,now.Add(-500*time.Millisecond),false)
+    unseen,age=v3CameraCoverage(monitors,now)
+    if unseen!=15||age!=4*time.Second {
+        t.Fatalf("scanning one CCTV camera must not erase all unseen ages: %d %v",unseen,age)
+    }
+}
