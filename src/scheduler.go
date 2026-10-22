@@ -107,7 +107,7 @@ func (s *scanScheduler) observe(frame []byte, w, h int, regions []scanRegion) bo
 			s.activity[i] = math.Max(measured, s.activity[i]*.48)
 		}
 		s.fingerprint[i] = cur
-        if s.previousProfile == 3 && i < 17 && i < len(s.coreFingerprint) {
+        if s.previousProfile == 3 && len(regions)==17 && i < 17 && i < len(s.coreFingerprint) {
             col,row:=(i-1)%4,(i-1)/4
             x1,x2:=col*w/4,(col+1)*w/4
             y1,y2:=row*h/4,(row+1)*h/4
@@ -234,6 +234,11 @@ func (s *scanScheduler) scanOwner(box Rect) int {
     col := int(cx * 4 / float64(s.width))
     row := int(cy * 4 / float64(s.height))
     if col < 0 || col > 3 || row < 0 || row > 3 {return 0}
+    // The optional two-vertically-stacked-camera research layout contains
+    // eight crops: grouped rows 0+1 and 2+3, four columns each.
+    // Keep box ownership aligned with those crops without changing
+    // normal 16-camera behavior.
+    if len(s.lastScan)==9 {return (row/2)*4+col+1}
     return row * 4 + col + 1
 }
 
