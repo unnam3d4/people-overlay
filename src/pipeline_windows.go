@@ -164,7 +164,8 @@ func analyze(d *Detector) {
 			continue
 		}
 		lastEnabled = true
-		w, h := screenSize()
+        selected:=activeDesktopRect()
+        w,h:=selected.width(),selected.height()
 		if w < 64 || h < 64 {
 			time.Sleep(time.Second)
 			continue
@@ -200,7 +201,7 @@ func analyze(d *Detector) {
 		if captureCompat.Load() {
 			captureFlags |= 0x40000000
 		} // CAPTUREBLT: compositor/layered-window compatibility
-		ok, _, _ := pBlt.Call(snap.dc, 0, 0, uintptr(w), uintptr(h), screen, 0, 0, captureFlags)
+		ok, _, _ := pBlt.Call(snap.dc, 0, 0, uintptr(w), uintptr(h), screen, uintptr(int64(selected.Left)), uintptr(int64(selected.Top)), captureFlags)
 		if ok == 0 {
 			logError(fmt.Errorf("BitBlt capture failed"))
 			time.Sleep(time.Second)
