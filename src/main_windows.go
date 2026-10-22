@@ -316,11 +316,12 @@ func drawCorners(d *dib, items []Rect, color int32) {
 		if x2 <= x1 || y2 <= y1 {
 			continue
 		}
-		lx, ly := minI(24, maxI(6, (x2-x1)/4)), minI(24, maxI(6, (y2-y1)/4))
-		thick := 2
-		if x2-x1 > 120 {
-			thick = 3
-		}
+        // Thin CCTV-friendly markers: one actual colored pixel plus one
+        // contrast halo for typical small 4x4 video panes, rather than 2px
+        // color + 4px dark edge. Fullscreen people get 2px markers.
+        lx,ly:=minI(18,maxI(5,(x2-x1)/5)),minI(18,maxI(5,(y2-y1)/5))
+        thick:=1
+        if x2-x1>180 {thick=2}
 		for _, x := range []int{x1, x2} {
 			for _, y := range []int{y1, y2} {
 				dx, dy := lx, ly
@@ -332,8 +333,8 @@ func drawCorners(d *dib, items []Rect, color int32) {
 				}
 				// Dark outer contour improves visibility on both bright daytime
 				// and black-and-white night CCTV without filling the video with boxes.
-				stroke(d, x, y, x+dx, y, thick+2, 12, 20, 24)
-				stroke(d, x, y, x, y+dy, thick+2, 12, 20, 24)
+				stroke(d, x, y, x+dx, y, thick+1, 12, 20, 24)
+				stroke(d, x, y, x, y+dy, thick+1, 12, 20, 24)
 				stroke(d, x, y, x+dx, y, thick, r, g, b)
 				stroke(d, x, y, x, y+dy, thick, r, g, b)
 			}
