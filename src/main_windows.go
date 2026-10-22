@@ -472,11 +472,14 @@ func singletonGuard() (func(), error) {
 	return func() { pCloseHandle.Call(mutex) }, nil
 }
 func main() {
+    // Win11 125/150/200% monitor layouts require physical-pixel coordinates.
+    // Must happen before the window/tray creation; Win7 falls back safely.
+    _ = configureProcessDPI()
     // Read-only Win32 monitor diagnostics for x86/x64 CI and troubleshooting.
     if len(os.Args)==3 && os.Args[1]=="--monitor-report" {
         runtime.LockOSThread()
         defer runtime.UnlockOSThread()
-        pDPI.Call()
+        // DPI configured once before all dispatch branches.
         if err:=benchmarkWrite(os.Args[2],monitorList());err!=nil{
             logError(err)
             os.Exit(27)
@@ -522,7 +525,7 @@ func main() {
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	pDPI.Call()
+	// DPI configured once before all dispatch branches.
 	unlock, guardErr := singletonGuard()
 	if guardErr != nil {
 		alert("People Overlay AI", guardErr.Error())
