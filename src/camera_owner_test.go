@@ -60,3 +60,19 @@ func TestV3CrossCameraBoxesNeverMergeIDs(t *testing.T) {
         t.Fatalf("two camera sources should never reuse one person ID: first=%v next=%v",a,b)
     }
 }
+
+func TestV3CCTVReplayUsesSameCameraOwnershipAsLive(t *testing.T) {
+    scene:=scanScheduler{}
+    scene.reset(17,960,720,3)
+    first:=Rect{X:100,Y:80,W:45,H:90,Score:.9}
+    neighbour:=Rect{X:265,Y:80,W:45,H:90,Score:.9}
+    found:=scene.filterCameraDetections(1,[]Rect{first,neighbour})
+    if len(found)!=1 || found[0]!=first {
+        t.Fatalf("replay must exclude people from another camera: %+v",found)
+    }
+    // Experimental 8-ROI vertical-pair research clips are not ordinary
+    // 16 camera tiles; ownership is deliberately not over-filtered.
+    scene.reset(9,960,720,3)
+    paired:=scene.filterCameraDetections(1,[]Rect{first,neighbour})
+    if len(paired)!=2 {t.Fatal("8 paired ROI study must retain both native feed predictions")}
+}
