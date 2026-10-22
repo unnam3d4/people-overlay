@@ -325,6 +325,7 @@ func v3Analyze(detector *Detector) {
                 lastBusy=result.duration
                 s.tracker.maxAIAge=recheckTTL(len(s.regions),s.profile,lastBusy)
                 nextInfer=now.Add(throttleFor(s.profile,result.duration))
+                if s.profile==0 && v3FullAccuracy.Load() {nextInfer=now}
             default:
                 drain=false
             }
@@ -465,6 +466,7 @@ func v3Analyze(detector *Detector) {
         v3UnvisitedCameras.Store(int32(unseen))
         v3WorstCameraAgeMS.Store(worst.Milliseconds())
         cadence:=v3CaptureCadence(profile,len(screens),len(s.tracker.people)>0,fastAI.Load())
+        if profile==0 && v3FullAccuracy.Load() {cadence=85*time.Millisecond}
         if elapsed:=time.Since(start);elapsed<cadence{time.Sleep(cadence-elapsed)}
     }
 }
