@@ -25,6 +25,7 @@ const (
 	menuIDProfileEco      = 110
 	menuIDProfileBalanced = 111
 	menuIDProfileCCTV     = 112
+    menuIDProfileAuto     = 113
 	menuIDSensLow         = 120
 	menuIDSensNormal      = 121
 	menuIDSensHigh        = 122
@@ -261,7 +262,8 @@ func (t *appTray) popupMenu() {
     trayAppendMenu.Call(menu,menuString|1,0,uintptr(unsafe.Pointer(coverageText)))
 
 	separator(menu)
-	appendMenu(menu, menuIDProfileSingle, "Режим: одна камера на весь экран", scanMode.Load() == 0)
+	appendMenu(menu, menuIDProfileAuto, "АВТО: сам определяет сетку или одну камеру", scanMode.Load() == -1)
+    appendMenu(menu, menuIDProfileSingle, "Режим: одна камера на весь экран", scanMode.Load() == 0)
 	appendMenu(menu, menuIDProfileEco, "Режим: экономный (2×2)", scanMode.Load() == 1)
 	appendMenu(menu, menuIDProfileBalanced, "Режим: сбалансированный (3×3)", scanMode.Load() == 2)
 	appendMenu(menu, menuIDProfileCCTV, "Режим: видеонаблюдение (4×4)", scanMode.Load() == 3)
@@ -350,7 +352,7 @@ func (t *appTray) action(id uintptr) {
     }
 	defer func() {
 		switch id {
-		case menuIDToggle, menuIDProfileSingle, menuIDProfileEco, menuIDProfileBalanced, menuIDProfileCCTV,
+		case menuIDToggle, menuIDProfileAuto, menuIDProfileSingle, menuIDProfileEco, menuIDProfileBalanced, menuIDProfileCCTV,
 			menuIDSensLow, menuIDSensNormal, menuIDSensHigh, menuIDContrast, menuIDCaptureCompat, menuIDFastAI, menuIDTest:
 			configurationGeneration.Add(1)
 		}
@@ -359,7 +361,10 @@ func (t *appTray) action(id uintptr) {
 	case menuIDToggle:
 		enabled.Store(!enabled.Load())
 		version.Add(1)
-	case menuIDProfileSingle:
+	case menuIDProfileAuto:
+        scanMode.Store(-1)
+        version.Add(1)
+    case menuIDProfileSingle:
 		scanMode.Store(0)
 		version.Add(1)
 	case menuIDProfileEco:
