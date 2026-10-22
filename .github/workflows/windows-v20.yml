@@ -83,8 +83,11 @@ jobs:
           New-Item -ItemType Directory -Force trial-evidence | Out-Null
           foreach ($exe in Get-ChildItem 'DIST/PeopleOverlay_v2.0_candidate_YOLO*.exe') {
             $evidence = Join-Path (Resolve-Path trial-evidence).Path ($exe.BaseName + '.json')
-            & $exe.FullName --selftest $evidence
-            if ($LASTEXITCODE -ne 0) { throw "Portable selftest failed: $($exe.Name)" }
+            # windowsgui executables do not reliably block PowerShell's
+            # call operator. Start-Process -Wait is mandatory for real proof.
+            $p = Start-Process -FilePath $exe.FullName -ArgumentList @('--selftest', ('"' + $evidence + '"')) -WindowStyle Hidden -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "Portable selftest failed: $($exe.Name), exit $($p.ExitCode)" }
+            if (!(Test-Path -LiteralPath $evidence)) { throw "No selftest output for $($exe.Name)" }
             $r = Get-Content $evidence -Raw | ConvertFrom-Json
             if (!$r.passed -or $r.matched_people -ne 3 -or $r.blank_people -ne 0) { throw "Invalid person-image check: $($exe.Name)" }
           }
