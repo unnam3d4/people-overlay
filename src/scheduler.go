@@ -194,6 +194,15 @@ func (s *scanScheduler) nextFullDetail(now time.Time) int {
     return best
 }
 
+// Apply the same nominal camera ownership to OFFLINE body-GT replay as to
+// LIVE RVi capture. A 4x4 research configuration using eight paired ROIs is
+// deliberately left unchanged; its regions are not one-to-one camera tiles.
+func (s *scanScheduler) filterCameraDetections(index int, people []Rect) []Rect {
+    cols:=v3GridColumns(s.previousProfile)
+    if cols==0 || len(s.lastScan)!=cols*cols+1{return people}
+    return v3KeepCameraDetections(people,index,s.width,s.height,s.previousProfile)
+}
+
 // firstVisitRegion returns the most promising camera never checked since
 // the current mosaic/layout started. Movement matters, but a quiet tile
 // must still get a first look: a motion-only detector misses standing people.
