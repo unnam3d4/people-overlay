@@ -328,11 +328,7 @@ func runBenchmarkCLI(args []string) error {
 				if manifest.Profile == 3 {
 					sch.lastFull = now
 				}
-				cols := 0
-				if manifest.Profile == 3 {
-					cols = 4
-				}
-				tracker.layout(w, h, cols)
+				tracker.layout(w, h, v3GridColumns(manifest.Profile))
 			} else if w != report.Width || h != report.Height {
 				return fmt.Errorf("frame %d changes dimensions", i)
 			}
@@ -340,11 +336,7 @@ func runBenchmarkCLI(args []string) error {
 			if sch.observe(pixels, w, h, regs) {
 				epoch++
 				tracker.reset()
-				cols := 0
-				if manifest.Profile == 3 {
-					cols = 4
-				}
-				tracker.layout(w, h, cols)
+				tracker.layout(w, h, v3GridColumns(manifest.Profile))
 				sch.reset(len(regs), w, h, manifest.Profile)
 				if manifest.Profile == 3 {
 					sch.lastFull = now
