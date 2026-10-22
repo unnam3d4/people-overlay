@@ -72,6 +72,8 @@ func v3RecognizeLayout(p []byte,w,h int) int32 {
     for _,grid:=range []int{4,3,2} {
         vertical:=v3SeamScore(p,w,h,grid,true)
         horizontal:=v3SeamScore(p,w,h,grid,false)
+        if vertical<.85 {vertical=v3WindowedSeamScore(p,w,h,grid,true)}
+        if horizontal<.85 {horizontal=v3WindowedSeamScore(p,w,h,grid,false)}
         if vertical>=.85 && horizontal>=.85{return map[int]int32{2:1,3:2,4:3}[grid]}
     }
     return 0
