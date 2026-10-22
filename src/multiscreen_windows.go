@@ -252,6 +252,7 @@ func v3Analyze(detector *Detector) {
         pendingCamera.Store(0)
         v3UnvisitedCameras.Store(0)
         v3WorstCameraAgeMS.Store(0)
+        v3CapturePreviewReady.Store(false)
         tentativeCount.Store(0)
         confirmedCount.Store(0)
         lostCount.Store(0)
@@ -348,6 +349,9 @@ func v3Analyze(detector *Detector) {
         ok,_,_:=pBlt.Call(s.snap.dc,0,0,uintptr(w),uintptr(h),screen,
             uintptr(int64(s.rect.Left)),uintptr(int64(s.rect.Top)),flags)
         if ok==0 {
+            if int(displaySelection.Load())==slot {
+                v3CapturePreviewReady.Store(false)
+            }
             s.captureFailures++
             // A dead video source must not leave stale green markers onscreen.
             if s.captureFailures==3 {
@@ -396,6 +400,14 @@ func v3Analyze(detector *Detector) {
         diagnostic:=int(displaySelection.Load())
         if diagnostic<0||diagnostic>=len(screens){diagnostic=0}
         if slot==diagnostic {
+            stats:=v3CapturePixelStats(s.snap.pixels,w,h)
+            if stats.Samples>0 {
+                v3CapturePreviewMean.Store(int32(stats.MeanBrightness))
+                v3CapturePreviewBlack.Store(int32(stats.BlackPercent))
+                v3CapturePreviewRange.Store(int32(stats.DynamicRange))
+                v3CapturePreviewSuspect.Store(stats.PossiblyBlank)
+                v3CapturePreviewReady.Store(true)
+            }
             if captureRequested.Swap(false) {
                 go saveCapture(append([]byte(nil),s.snap.pixels...),w,h)
             }
