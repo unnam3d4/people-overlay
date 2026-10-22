@@ -202,6 +202,15 @@ func v3CaptureCadence(profile int32, screens int, hasPeople, fast bool) time.Dur
     return cadence
 }
 
+func v3AIPause(profile int32,busy time.Duration,fullQuality bool) time.Duration {
+    if profile==0 && fullQuality{return 0}
+    return throttleFor(profile,busy)
+}
+func v3FrameWait(profile int32,monitors int,hasPeople,fast,fullQuality bool) time.Duration {
+    if profile==0 && fullQuality{return 85*time.Millisecond}
+    return v3CaptureCadence(profile,monitors,hasPeople,fast)
+}
+
 // v3Analyze replaces single-display analyze(), retaining production NCNN,
 // timestamp-anchored detections, tracking checks and the anti-noise alarm.
 func v3Analyze(detector *Detector) {
@@ -324,8 +333,7 @@ func v3Analyze(detector *Detector) {
                 lastInferenceMS.Store(result.duration.Milliseconds())
                 lastBusy=result.duration
                 s.tracker.maxAIAge=recheckTTL(len(s.regions),s.profile,lastBusy)
-                nextInfer=now.Add(throttleFor(s.profile,result.duration))
-                if s.profile==0 && v3FullAccuracy.Load() {nextInfer=now}
+                nextInfer=now.Add(v3AIPause(s.profile,result.duration,v3FullAccuracy.Load()))
             default:
                 drain=false
             }
@@ -465,8 +473,7 @@ func v3Analyze(detector *Detector) {
         unseen,worst:=v3CameraCoverage(screens,now)
         v3UnvisitedCameras.Store(int32(unseen))
         v3WorstCameraAgeMS.Store(worst.Milliseconds())
-        cadence:=v3CaptureCadence(profile,len(screens),len(s.tracker.people)>0,fastAI.Load())
-        if profile==0 && v3FullAccuracy.Load() {cadence=85*time.Millisecond}
+        cadence:=v3FrameWait(profile,len(screens),len(s.tracker.people)>0,fastAI.Load(),v3FullAccuracy.Load())
         if elapsed:=time.Since(start);elapsed<cadence{time.Sleep(cadence-elapsed)}
     }
 }
