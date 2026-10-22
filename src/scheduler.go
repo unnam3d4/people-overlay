@@ -23,6 +23,7 @@ type scanScheduler struct {
 	lastFull        time.Time
 	firstDecision   time.Time
     decisionCount uint64
+    coverageDecision uint64 // independent quota for never-scanned CCTV tiles
 }
 
 func (s *scanScheduler) reset(regions int, w, h int, profile int32) {
@@ -41,6 +42,7 @@ func (s *scanScheduler) reset(regions int, w, h int, profile int32) {
 	s.lastFull = time.Time{}
 	s.firstDecision = time.Time{}
     s.decisionCount = 0
+    s.coverageDecision = 0
 	if profile == 3 {
 		s.lastFull = time.Now()
 	}
@@ -172,6 +174,37 @@ func (s *scanScheduler) next(now time.Time, profile int32) int {
 		}
 	}
 	return best
+}
+
+// firstVisitRegion returns the most promising camera never checked since
+// the current mosaic/layout started. Movement matters, but a quiet tile
+// must still get a first look: a motion-only detector misses standing people.
+func (s *scanScheduler) firstVisitRegion(regions []scanRegion) int {
+    best:=-1
+    bestScore:=-1.0
+    for i:=1;i<len(regions) && i<len(s.lastScan);i++ {
+        if !s.lastScan[i].IsZero() {continue}
+        score:=s.activity[i]*100
+        if i<len(s.coreActivity) {score+=s.coreActivity[i]*120}
+        if i<len(s.motionArrival) && s.motionArrival[i] {score+=50}
+        // Stable tie-break by physical camera index to guarantee coverage
+        // even for a long series of perfectly stationary images.
+        if best<0 || score>bestScore {best,bestScore=i,score}
+    }
+    return best
+}
+
+// At startup, reserve two out of each three full-camera inference slots
+// for a feed not yet visited. Preserve one slot in three for revisiting
+// confirmed/tentative people. Once all cameras were checked, the original
+// adaptive scoring and immediate weak-candidate confirmation resume.
+func (s *scanScheduler) ensureFirstCoverage(profile int32, regions []scanRegion, proposed int) int {
+    if profile!=3 || len(regions)<3 {return proposed}
+    candidate:=s.firstVisitRegion(regions)
+    if candidate<0 {return proposed}
+    s.coverageDecision++
+    if s.coverageDecision%3!=0 {return candidate}
+    return proposed
 }
 
 // scanOwner assigns a person to its *unpadded* nominal screen tile.
