@@ -120,9 +120,8 @@ func (d *dib) close() {
 	*d = dib{}
 }
 func screenSize() (int, int) {
-	w, _, _ := pMetric.Call(0)
-	h, _, _ := pMetric.Call(1)
-	return int(w), int(h)
+    target:=activeDesktopRect()
+    return target.width(),target.height()
 }
 func alert(title, msg string) {
 	a, _ := syscall.UTF16PtrFromString(title)
@@ -142,6 +141,9 @@ func logError(e error) {
 	}
 }
 
+// Index 0 is the primary monitor. Further entries follow stable coordinate
+// order. Only one monitor is scanned at a time to bound old-CPU load.
+var displaySelection atomic.Int32
 var enabled atomic.Bool
 var configurationGeneration atomic.Uint64
 var scanMode atomic.Int32
@@ -331,10 +333,12 @@ func render(hwnd uintptr) {
 	var last time.Time
 	var oldVersion int64 = -1
 	var oldW, oldH int
+    var oldX,oldY int32
 	var oldEnabled, oldTest bool
 	var oldColor int32
 	for !stopped.Load() {
-		w, h := screenSize()
+        target:=activeDesktopRect()
+        w,h:=target.width(),target.height()
 		if w < 64 || h < 64 {
 			time.Sleep(time.Second)
 			continue
@@ -348,16 +352,17 @@ func render(hwnd uintptr) {
 				time.Sleep(time.Second)
 				continue
 			}
-			pPos.Call(hwnd, ^uintptr(0), 0, 0, uintptr(w), uintptr(h), 0x10|0x40)
+			pPos.Call(hwnd, ^uintptr(0), uintptr(int64(target.Left)), uintptr(int64(target.Top)), uintptr(w), uintptr(h), 0x10|0x40)
 		}
 		active, test, c := enabled.Load(), testOnly.Load(), colour.Load()
 		v := version.Load()
-		changed := v != oldVersion || oldW != w || oldH != h || oldEnabled != active || oldTest != test || oldColor != c
+		changed := v != oldVersion || oldW != w || oldH != h || oldX != target.Left || oldY != target.Top || oldEnabled != active || oldTest != test || oldColor != c
 		if !changed && time.Since(last) < 3800*time.Millisecond {
 			time.Sleep(180 * time.Millisecond)
 			continue
 		}
 		oldVersion, oldW, oldH, oldEnabled, oldTest, oldColor = v, w, h, active, test, c
+        oldX,oldY=target.Left,target.Top
 		for i := range layer.pixels {
 			layer.pixels[i] = 0
 		}
@@ -374,7 +379,7 @@ func render(hwnd uintptr) {
 				}
 			}
 		}
-		pos, z, origin := point{}, dimensions{int32(w), int32(h)}, point{}
+		pos, z, origin := point{X:target.Left,Y:target.Top}, dimensions{int32(w), int32(h)}, point{}
 		renderStart := time.Now()
 		ok, _, _ := pUpdate.Call(hwnd, screen, uintptr(unsafe.Pointer(&pos)), uintptr(unsafe.Pointer(&z)), layer.dc, uintptr(unsafe.Pointer(&origin)), 0, uintptr(unsafe.Pointer(&mode)), ulwAlpha)
 		lastRenderUS.Store(time.Since(renderStart).Microseconds())
@@ -403,7 +408,8 @@ func render(hwnd uintptr) {
 func makeOverlay(w, h int) (uintptr, error) {
 	cls, _ := syscall.UTF16PtrFromString("STATIC")
 	title, _ := syscall.UTF16PtrFromString("People Overlay AI")
-	wnd, _, e := pWindow.Call(layered|transparent|toolWindow|noActivate|topMost, uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(title)), popUp, 0, 0, uintptr(w), uintptr(h), 0, 0, 0, 0)
+	target:=activeDesktopRect()
+    wnd, _, e := pWindow.Call(layered|transparent|toolWindow|noActivate|topMost, uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(title)), popUp, uintptr(int64(target.Left)), uintptr(int64(target.Top)), uintptr(w), uintptr(h), 0, 0, 0, 0)
 	if wnd == 0 {
 		return 0, fmt.Errorf("CreateWindowExW failed: %v", e)
 	}
