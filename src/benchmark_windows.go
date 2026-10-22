@@ -356,7 +356,14 @@ func runBenchmarkCLI(args []string) error {
 					applied := benchmarkMS(now.Sub(origin))
 					result.AppliedMS = &applied
 					zone := regs[result.RegionIndex]
-					// The shared benchmark harness must also compile unchanged v1.9
+					// Apply camera ownership exactly like the Windows screen engine.
+                    // The historical v1.9 scheduler lacks this optional method.
+                    if owner,ok:=interface{}(&sch).(interface{
+                        filterCameraDetections(int,[]Rect)[]Rect
+                    });ok {
+                        result.Detections=owner.filterCameraDetections(result.RegionIndex,result.Detections)
+                    }
+                    // The shared benchmark harness must also compile unchanged v1.9
                     // scheduler code, which has no ownership-aware method.
                     if owner, ok := interface{}(&sch).(interface {
                         markScannedPeople(int, time.Time, []Rect)
