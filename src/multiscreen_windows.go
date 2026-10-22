@@ -20,6 +20,8 @@ type v3Screen struct {
     alarm alarmGate
     epoch uint64
     captureFailures int
+    // AI completed on this screen; dispatch does not count as detection.
+    completed []time.Time
 }
 
 func v3AllRects(monitors []desktopMonitor) []desktopRect {
@@ -70,6 +72,7 @@ func v3CreateScreens(screen uintptr, rects []desktopRect, profile int32, epoch u
         }
         s:=&v3Screen{rect:rect,snap:snap,epoch:epoch}
         s.regions=regionsForProfile(w,h,profile)
+        s.completed=make([]time.Time,len(s.regions))
         s.sch.reset(len(s.regions),w,h,profile)
         s.tracker.enableConfirmation()
         cols:=0
@@ -118,9 +121,9 @@ func v3CameraCoverage(screens []*v3Screen, now time.Time) (unseen int, oldest ti
     for _, screen := range screens {
         if screen == nil {continue}
         start:=1
-        if len(screen.sch.lastScan)==1 {start=0}
-        for i:=start;i<len(screen.sch.lastScan);i++ {
-            scanAt:=screen.sch.lastScan[i]
+        if len(screen.completed)==1 {start=0}
+        for i:=start;i<len(screen.completed);i++ {
+            scanAt:=screen.completed[i]
             if scanAt.IsZero() {
                 unseen++
                 scanAt=screen.sch.firstDecision
@@ -265,6 +268,7 @@ func v3Analyze(detector *Detector) {
                 idx:=regionIndex(s.regions,result.zone)
                 if idx<0 {continue}
                 s.sch.markScannedPeople(idx,now,result.detected)
+                s.completed[idx]=now
                 s.tracker.observePeopleFromCapture(result.detected,result.captured,result.pixels,result.zone,result.capturedAt,now)
                 if idx!=0 || len(s.regions)==1 {
                     tileID:=0
@@ -298,6 +302,7 @@ func v3Analyze(detector *Detector) {
                 s.epoch=epoch // reject any AI result from the failed capture
                 s.tracker.reset()
                 s.sch.reset(len(s.regions),w,h,profile)
+                s.completed=make([]time.Time,len(s.regions))
                 s.alarm.resetScene()
                 v3Publish(screens,union,time.Now(),&lastPublished)
             }
@@ -347,6 +352,7 @@ func v3Analyze(detector *Detector) {
             s.tracker.layout(w,h,func()int{if profile==3{return 4};return 0}())
             s.alarm.resetScene()
             s.sch.reset(len(s.regions),w,h,profile)
+            s.completed=make([]time.Time,len(s.regions))
             nextInfer=time.Time{}
         }
 
