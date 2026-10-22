@@ -93,7 +93,7 @@ jobs:
         shell: pwsh
         run: |
           $reports = @(Get-ChildItem evidence/replay/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName })
-          if ($reports.Count -ne 8) { throw "Expected 8 full person-body replay reports, got $($reports.Count)" }
+          if ($reports.Count -ne 12) { throw "Expected 12 full person-body replay reports, got $($reports.Count)" }
           $baselineAndV3 = @($reports | Where-Object { (Split-Path $_ -Leaf) -match '^(v19|v3)-' })
           python scripts/evaluate_pixel_benchmark.py @baselineAndV3 --output evidence/comparison.json
           if ($LASTEXITCODE -ne 0) { throw "Real-body evaluator failed" }
