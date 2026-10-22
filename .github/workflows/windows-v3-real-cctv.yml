@@ -12,6 +12,9 @@ on:
       - 'src/multiscreen_windows.go'
       - 'src/scheduler_coverage_test.go'
       - 'scripts/cctv_model_comparison.py'
+      - 'scripts/cctv_release_gate.py'
+      - 'src/association.go'
+      - 'src/tracker.go'
   workflow_dispatch:
 permissions:
   contents: read
@@ -119,3 +122,9 @@ jobs:
             DIST/PeopleOverlay_v3_YOLOv8n_x64.bundle.json
             DIST/v19-benchmark-x64.bundle.json
           retention-days: 90
+      - name: Strict real-CCTV quality promotion gate - FAIL when unsafe
+        shell: pwsh
+        run: |
+          python scripts/cctv_release_gate.py evidence/model-comparison.json --model v3v8
+          if ($LASTEXITCODE -ne 0) { throw "Real CCTV person detection is below quality requirements; trial artifacts preserved, no stable promotion." }
+
