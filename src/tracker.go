@@ -861,9 +861,8 @@ func displayDuplicateTracks(a,b personTrack, now time.Time) bool {
     if older.LastAI.IsZero()||newer.LastAI.IsZero(){return false}
     oldAge:=now.Sub(older.LastAI)
     newAge:=now.Sub(newer.LastAI)
-    if oldAge<900*time.Millisecond||newAge<0||newAge>1250*time.Millisecond {
-        return false
-    }
+    if newAge<0||newAge>1250*time.Millisecond ||
+       oldAge-newAge<350*time.Millisecond {return false}
     // Both established human tracks get extra protection against accidental
     // merging during temporary occlusion/crowds. Truly stale old AI evidence
     // can still be hidden if a new overlapping silhouette is positively seen.
@@ -874,8 +873,19 @@ func displayDuplicateTracks(a,b personTrack, now time.Time) bool {
     wr:=math.Min(aBox.W,bBox.W)/math.Max(aBox.W,bBox.W)
     hr:=math.Min(aBox.H,bBox.H)/math.Max(aBox.H,bBox.H)
     if wr<.62||hr<.64{return false}
-    if centerSeparation(aBox,bBox)>.68{return false}
-    return overlap(aBox,bBox)>=.20 && coveringFraction(aBox,bBox)>=.42
+    distance:=centerSeparation(aBox,bBox)
+    iou:=overlap(aBox,bBox)
+    coverage:=coveringFraction(aBox,bBox)
+    // Several strong YOLO crops can give ONE moving pedestrian 3 IDs
+    // 500-800 ms apart. Do not leave the middle ID floating between the
+    // old and newly confirmed box. This recent-case gate is intentionally
+    // tighter and applies only to a tentative/recently born duplicate.
+    if oldAge<900*time.Millisecond {
+        return oldAge>=450*time.Millisecond &&
+            (older.AIHits<2||newer.AIHits<2) &&
+            distance<=.52 && iou>=.30 && coverage>=.50
+    }
+    return distance<=.68 && iou>=.20 && coverage>=.42
 }
 
 func (t *personTracker) views(now time.Time) []TrackView {
