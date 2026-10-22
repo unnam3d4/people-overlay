@@ -255,8 +255,11 @@ func v3Analyze(detector *Detector) {
         if ok==0 {
             s.captureFailures++
             // A dead video source must not leave stale green markers onscreen.
-            if s.captureFailures>=3 {
+            if s.captureFailures==3 {
+                epoch++
+                s.epoch=epoch // reject any AI result from the failed capture
                 s.tracker.reset()
+                s.sch.reset(len(s.regions),w,h,profile)
                 s.alarm.resetScene()
                 v3Publish(screens,union,time.Now(),&lastPublished)
             }
