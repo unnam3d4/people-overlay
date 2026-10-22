@@ -104,6 +104,7 @@ func analyze(d *Detector) {
 	tracker.enableConfirmation()
 	var alarm alarmGate
 	var regions []scanRegion
+    var lastDesktopRect desktopRect
 	var epoch uint64
 	var pending bool
 	var nextInference time.Time
@@ -174,7 +175,11 @@ func analyze(d *Detector) {
 		if profile < 0 || profile > 3 {
 			profile = 2
 		}
-		if snap.w != w || snap.h != h || profile != sch.previousProfile {
+		// A cable unplug / Windows Display Settings reorder can change monitor
+        // origin without changing resolution. Do not reuse identities or
+        // motion fingerprints captured from a different physical display.
+        if snap.w != w || snap.h != h || profile != sch.previousProfile || selected != lastDesktopRect {
+            lastDesktopRect=selected
 			snap.close()
 			var e error
 			snap, e = newDIB(screen, w, h)
