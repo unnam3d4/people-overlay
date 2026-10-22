@@ -171,6 +171,9 @@ var tentativeCount atomic.Int32
 var confirmedCount atomic.Int32
 var lostCount atomic.Int32
 var trackedCount atomic.Int32
+var v3UnvisitedCameras atomic.Int32
+var v3WorstCameraAgeMS atomic.Int64
+
 var testOnly atomic.Bool
 var colour atomic.Int32
 var stopped atomic.Bool
