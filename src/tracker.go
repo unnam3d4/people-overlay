@@ -52,6 +52,7 @@ type personTracker struct {
 	grayW, grayH         int
 	grayAt               time.Time
 	screenW, screenH     int
+    viewport             scanRegion
 	columns              int
 	maxAIAge             time.Duration
 	confirmationRequired bool
@@ -94,28 +95,20 @@ const trackingDownscale = 2
 const maxTrackedPeople = 48
 
 func (t *personTracker) layout(w, h, cols int) {
-	t.screenW, t.screenH, t.columns = w, h, cols
+ t.screenW,t.screenH,t.columns=w,h,cols
+ t.viewport=scanRegion{0,0,w,h}
+}
+func (t *personTracker) setViewport(v scanRegion){
+ if v.w>0 && v.h>0 && v.x>=0 && v.y>=0 &&
+   v.x+v.w<=t.screenW && v.y+v.h<=t.screenH {t.viewport=v}
 }
 func (t *personTracker) tileOf(r Rect) int {
-	if t.screenW < 1 || t.screenH < 1 || t.columns < 2 {
-		return 0
-	}
-	x := int((r.X + r.W*.5) * float64(t.columns) / float64(t.screenW))
-	y := int((r.Y + r.H*.5) * float64(t.columns) / float64(t.screenH))
-	if x < 0 {
-		x = 0
-	}
-	if y < 0 {
-		y = 0
-	}
-	if x >= t.columns {
-		x = t.columns - 1
-	}
-	if y >= t.columns {
-		y = t.columns - 1
-	}
-	return y*t.columns + x + 1
+ if t.columns<2 || t.screenW<1 || t.screenH<1 {return 0}
+ v:=t.viewport
+ if v.w==0||v.h==0{v=scanRegion{0,0,t.screenW,t.screenH}}
+ return v3OwnerTileViewport(r,v,t.columns)
 }
+
 func (t *personTracker) reset() {
 	t.people = nil
 	t.prevGray = nil
