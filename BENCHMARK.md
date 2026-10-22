@@ -3,6 +3,18 @@
 The candidate is under validation. This report is updated with measured final
 results before delivery; a green self-test alone is not a field-accuracy claim.
 
+## Multi-monitor capture validation scope
+
+v20 adds monitor selection in the tray through Win32 EnumDisplayMonitors
+and GetMonitorInfoW, with primary-first ordering. BitBlt reads the
+selected monitor at its signed virtual-desktop origin, while
+UpdateLayeredWindow positions the click-through overlay at that origin.
+Switching monitors invalidates the previous generation of AI results.
+
+Windows unit tests cover sorting, negative X/Y monitor coordinates,
+and fallback after unplug; a genuine multiple-display desktop and
+simultaneous multi-monitor AI detection are **not** validated or claimed.
+Only one selected monitor is processed at a time.
 ## Detection target and real-video acceptance
 
 The application detects **whole humans (COCO class person = 0)**, not faces.
