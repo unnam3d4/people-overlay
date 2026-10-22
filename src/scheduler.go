@@ -176,6 +176,24 @@ func (s *scanScheduler) next(now time.Time, profile int32) int {
 	return best
 }
 
+// A whole-screen frame every other neural slot preserves fresh person
+// discovery; the alternating slot goes to the oldest or most active zoom.
+// Never use this with camera mosaics: a detail zoom would crop unrelated feeds.
+func (s *scanScheduler) nextFullDetail(now time.Time) int {
+    if len(s.lastScan)!=5{return 0}
+    s.decisionCount++
+    if s.decisionCount%2==1{return 0}
+    best:=1
+    bestScore:=-1.
+    for i:=1;i<5;i++{
+        age:=8.0
+        if !s.lastScan[i].IsZero(){age=now.Sub(s.lastScan[i]).Seconds()}
+        score:=age*2.0 + s.activity[i]*90
+        if score>bestScore{best,bestScore=i,score}
+    }
+    return best
+}
+
 // firstVisitRegion returns the most promising camera never checked since
 // the current mosaic/layout started. Movement matters, but a quiet tile
 // must still get a first look: a motion-only detector misses standing people.
