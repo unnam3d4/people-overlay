@@ -5,7 +5,7 @@ package main
 // desktop fractions (w/2,w/3,w/4) are NOT generally the video-pane seams.
 // Work entirely on CPU in a few thousand pre-sampled grayscale edge positions.
 // No app-specific hooks, OS dependencies, screenshots, or exported telemetry.
-import "math"
+import ("math";"time")
 
 func v3WindowedSeamScore(p []byte,w,h,grid int,vertical bool) float64 {
     length:=h
