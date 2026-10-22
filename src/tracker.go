@@ -806,15 +806,60 @@ func (t *personTracker) prune(now time.Time) {
 	}
 	t.people = keep
 }
+// Rendering is intentionally stricter than track association: a stale
+// internal track may still help the next neural inference preserve an ID,
+// but must NOT leave frozen corner markers on an empty camera. On the 4x4
+// CPU mosaic give AI up to 3s to revisit a tile; smaller layouts require
+// more recent neural evidence. First reliable negative inference hides the
+// marker immediately, while the track can survive until a second scan.
+func (t *personTracker) drawableTrack(p personTrack, now time.Time) bool {
+    if !t.trackVisible(p) {return false}
+    if !t.confirmationRequired {return true}
+    if p.AIMisses>0 || p.LastAI.IsZero() {return false}
+    aiAge:=now.Sub(p.LastAI)
+    visualAge:=now.Sub(p.LastVisual)
+    if aiAge<0 || visualAge<0 {return false}
+    maxAIVisible:=1900*time.Millisecond
+    if t.columns==4 {maxAIVisible=3000*time.Millisecond}
+    if aiAge>maxAIVisible {return false}
+    // Lost texture cannot remain painted merely because a slow 4x4
+    // mosaic has not scheduled the person's tile again.
+    if visualAge>850*time.Millisecond && aiAge>850*time.Millisecond {return false}
+    return true
+}
+
 func (t *personTracker) views(now time.Time) []TrackView {
-	t.prune(now)
-	views := make([]TrackView, 0, len(t.people))
-	for _, p := range t.people {
-		if t.trackVisible(p) {
-			views = append(views, TrackView{Box: p.Box, ID: p.ID})
-		}
-	}
-	return views
+    t.prune(now)
+    views:=make([]TrackView,0,len(t.people))
+    for _,p:=range t.people {
+        if !t.drawableTrack(p,now){continue}
+        // Strict display-only suppression: asynchronous camera crops can
+        // produce a new track before the earlier ID has aged out. Suppress
+        // nearly identical silhouettes, keeping whichever has newer AI
+        // evidence. Do NOT mutate underlying tracking identity and never
+        // merge generally overlapping humans.
+        duplicate:=-1
+        for i,v:=range views {
+            if sameSilhouette(v.Box,p.Box) {
+                duplicate=i
+                break
+            }
+        }
+        if duplicate>=0 {
+            existing:=views[duplicate]
+            newer:=false
+            for _,q:=range t.people {
+                if q.ID==existing.ID {
+                    newer=p.LastAI.After(q.LastAI)
+                    break
+                }
+            }
+            if newer {views[duplicate]=TrackView{Box:p.Box,ID:p.ID}}
+            continue
+        }
+        views=append(views,TrackView{Box:p.Box,ID:p.ID})
+    }
+    return views
 }
 
 // Hidden candidates and briefly lost identities still need neural revisits.
