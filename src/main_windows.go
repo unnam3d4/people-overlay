@@ -612,17 +612,13 @@ func main() {
 			tray.reAdd()
 			continue
 		}
-		if m.Message == trayMessage {
-			switch uint32(m.LParam) {
-			case wmRButtonUp, wmContextMenu, wmLButtonUp:
-				tray.popupMenu()
-			case wmLButtonDouble:
-				enabled.Store(!enabled.Load())
-				configurationGeneration.Add(1)
-				version.Add(1)
-			}
-			continue
-		}
+        if m.Message==trayMessage && m.HWND==tray.hwnd {
+            // Fallback for Explorer implementations which POST icon events
+            // rather than sending them directly to the tray owner's WndProc.
+            // The WndProc handles synchronous SendMessage paths itself.
+            if trayMouseOp(uint32(m.LParam))!=0 {tray.popupMenu()}
+            continue
+        }
 		if m.Message == wmHotkey {
 			switch m.WParam {
 			case 1:
