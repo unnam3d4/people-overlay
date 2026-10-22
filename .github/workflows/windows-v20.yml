@@ -64,6 +64,71 @@ jobs:
           path: DIST/*
           retention-days: 7
 
+  # An immediately downloadable, explicitly NON-STABLE trial for actual
+  # operator testing. Do not confuse this with the strict full-body quality
+  # gate; on PETS2009 the 16-camera recall remains low.
+  field-trial-portable:
+    needs: package
+    runs-on: windows-2022
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: v20-internal-candidates
+          path: DIST
+      - name: Verify four self-contained models actually recognize people
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force trial-evidence | Out-Null
+          foreach ($exe in Get-ChildItem 'DIST/PeopleOverlay_v2.0_candidate_YOLO*.exe') {
+            $evidence = Join-Path (Resolve-Path trial-evidence).Path ($exe.BaseName + '.json')
+            & $exe.FullName --selftest $evidence
+            if ($LASTEXITCODE -ne 0) { throw "Portable selftest failed: $($exe.Name)" }
+            $r = Get-Content $evidence -Raw | ConvertFrom-Json
+            if (!$r.passed -or $r.matched_people -ne 3 -or $r.blank_people -ne 0) { throw "Invalid person-image check: $($exe.Name)" }
+          }
+      - name: Build trial ZIP for real RVi/operator testing, clearly not a stable release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force FIELD-TRIAL | Out-Null
+          Get-ChildItem 'DIST/PeopleOverlay_v2.0_candidate_YOLO*.exe' | Copy-Item -Destination FIELD-TRIAL
+          Get-ChildItem 'DIST/PeopleOverlay_v2.0_candidate_YOLO*.bundle.json' | Copy-Item -Destination FIELD-TRIAL
+          Copy-Item README.md,BENCHMARK.md,LICENSE,THIRD_PARTY_NOTICES.txt FIELD-TRIAL
+          @'
+          PEOPLE OVERLAY AI v20 - TEST CANDIDATE, NOT STABLE RELEASE
+          --------------------------------------------------------
+          Use on a Windows test PC first, never rely on it for access
+          control or safety-critical surveillance decisions.
+          Choose x64 or x86, and YOLO26n or YOLOv8n (fallback).
+          Only ONE EXE should run per Windows session.
+          Launch the EXE, then right-click its system tray icon:
+          choose the monitor showing RVi Operator, and select the
+          appropriate camera-grid mode (single, 2x2, 3x3 or 4x4).
+          Ctrl+Alt+F9 toggles detection. Ctrl+Alt+F10 exits.
+          Fallback model and architectures may behave differently.
+          Does NOT connect to RVi streams, network, cameras or drivers.
+          Offline after delivery. No Python needed on test PC.
+          Known issue: full-body recall on crowded real PETS2009 4x4
+          mosaic is low, and body tracking gate is still failing.
+          Genuine two-monitor RVi and Windows 7 tests NOT complete.
+          GitHub Actions contains the exact test reports.
+          If a monitor shows blank or old frames, use tray diagnostic
+          and compatibility capture mode; report logs/screenshots only
+          after checking your organization's privacy restrictions.
+          '@ | Out-File -LiteralPath FIELD-TRIAL/READ-ME-FIRST.txt -Encoding utf8
+          Compress-Archive -Path FIELD-TRIAL/* -DestinationPath PeopleOverlay_v20_FIELD_TRIAL_x64_x86.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PeopleOverlay_v20_FIELD_TRIAL_OFFLINE_x64_x86_NOT_STABLE
+          path: PeopleOverlay_v20_FIELD_TRIAL_x64_x86.zip
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PeopleOverlay_v20_FIELD_TRIAL_real_person_selftests
+          path: trial-evidence/
+          retention-days: 30
+
   verify:
     needs: package
     runs-on: windows-2022
