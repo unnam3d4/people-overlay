@@ -107,7 +107,7 @@ jobs:
             foreach ($m in $monitors) {
               if ($m.Rect.Right -le $m.Rect.Left -or $m.Rect.Bottom -le $m.Rect.Top) { throw "Invalid monitor rectangle on $name" }
             }
-            Write-Host "$name: $($monitors.Count) actual monitors enumerated. CI does NOT exercise a true multi-monitor desktop."
+            Write-Host "${name}: $($monitors.Count) actual monitors enumerated. CI does NOT exercise a true multi-monitor desktop."
           }
       - name: Actual embedded-model positive and negative self-tests on both architectures
         shell: pwsh
