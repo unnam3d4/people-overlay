@@ -19,6 +19,7 @@ type v3Screen struct {
     tracker personTracker
     alarm alarmGate
     epoch uint64
+    captureFailures int
 }
 
 func v3AllRects(monitors []desktopMonitor) []desktopRect {
@@ -109,6 +110,15 @@ func v3Publish(screens []*v3Screen, union desktopRect, now time.Time, last *[]Tr
     }
 }
 
+// Only apply a delayed neural result to the physical screen and scene
+// generation it was captured from. Topology changes and hard scene cuts
+// invalidate only their matching requests.
+func v3AcceptReply(screens []*v3Screen, result inferenceReply) bool {
+    if result.display<0 || result.display>=len(screens) {return false}
+    s:=screens[result.display]
+    return s!=nil && s.epoch==result.epoch
+}
+
 // v3Analyze replaces single-display analyze(), retaining production NCNN,
 // timestamp-anchored detections, tracking checks and the anti-noise alarm.
 func v3Analyze(detector *Detector) {
@@ -141,6 +151,7 @@ func v3Analyze(detector *Detector) {
     var probeAt time.Time
     var probeFirst []byte
     var globalAlarmAt time.Time
+    // Each screen can advance its scene generation independently.
 
     clear:=func(){
         boxes.mu.Lock()
@@ -149,6 +160,7 @@ func v3Analyze(detector *Detector) {
         boxes.mu.Unlock()
         lastPublished=nil
         trackedCount.Store(0)
+        pendingCamera.Store(0)
         tentativeCount.Store(0)
         confirmedCount.Store(0)
         lostCount.Store(0)
@@ -209,9 +221,8 @@ func v3Analyze(detector *Detector) {
             case result:=<-replies:
                 pending=false
                 pendingCamera.Store(0)
-                if result.epoch!=epoch || result.display<0 || result.display>=len(screens) {continue}
+                if !v3AcceptReply(screens,result) {continue}
                 s:=screens[result.display]
-                if s.epoch!=result.epoch {continue}
                 if result.err!=nil {logError(result.err);nextInfer=now.Add(time.Second);continue}
                 idx:=regionIndex(s.regions,result.zone)
                 if idx<0 {continue}
@@ -242,10 +253,23 @@ func v3Analyze(detector *Detector) {
         ok,_,_:=pBlt.Call(s.snap.dc,0,0,uintptr(w),uintptr(h),screen,
             uintptr(int64(s.rect.Left)),uintptr(int64(s.rect.Top)),flags)
         if ok==0 {
-            logError(fmt.Errorf("v3 monitor %d BitBlt failed",slot+1))
-            time.Sleep(250*time.Millisecond)
+            s.captureFailures++
+            // A dead video source must not leave stale green markers onscreen.
+            if s.captureFailures>=3 {
+                s.tracker.reset()
+                s.alarm.resetScene()
+                v3Publish(screens,union,time.Now(),&lastPublished)
+            }
+            // Failed capture of the screen expected by the AI scheduler must
+            // not block every other display from neural checks.
+            if slot==nextAI {nextAI=(slot+1)%len(screens)}
+            if s.captureFailures==1 || s.captureFailures%20==0 {
+                logError(fmt.Errorf("v3 monitor %d BitBlt failed (%d consecutive)",slot+1,s.captureFailures))
+            }
+            time.Sleep(150*time.Millisecond)
             continue
         }
+        s.captureFailures=0
         pGdiFlush.Call()
         lastCaptureUS.Store(time.Since(start).Microseconds())
 
@@ -274,14 +298,14 @@ func v3Analyze(detector *Detector) {
         }
 
         if s.sch.observe(s.snap.pixels,w,h,s.regions) {
-            // Reset ONLY the monitor whose RVi layout changed.
+            // A scene cut on one display must not reject fresh inference
+            // from unrelated displays. Requests carry per-display epochs.
             epoch++
+            s.epoch=epoch
             s.tracker.reset()
             s.tracker.layout(w,h,func()int{if profile==3{return 4};return 0}())
             s.alarm.resetScene()
             s.sch.reset(len(s.regions),w,h,profile)
-            // Scene generation is shared with the one pending AI request.
-            for _,other:=range screens {other.epoch=epoch}
             nextInfer=time.Time{}
         }
 
@@ -302,7 +326,7 @@ func v3Analyze(detector *Detector) {
                     captured:=s.tracker.schedulerViews(now)
                     select {
                     case req<-inferenceRequest{pixels:crop,contrast:contrastMode.Load(),
-                        zone:region,epoch:epoch,display:slot,captured:captured,capturedAt:now}:
+                        zone:region,epoch:s.epoch,display:slot,captured:captured,capturedAt:now}:
                         pending=true
                         // Human-readable status encodes physical monitor and zone.
                         pendingCamera.Store(int32((slot+1)*100+index))
