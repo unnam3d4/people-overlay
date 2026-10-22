@@ -2,7 +2,10 @@
 
 package main
 
-import "testing"
+import (
+    "testing"
+    "time"
+)
 
 func TestV3UnionAndDisplayRelativeCoordinates(t *testing.T) {
     ms:=[]desktopMonitor{
@@ -58,5 +61,17 @@ func TestV3IndependentDisplayEpochs(t *testing.T) {
     }
     if v3AcceptReply(screens,inferenceReply{display:-1,epoch:12}) {
         t.Fatal("negative monitor index accepted")
+    }
+}
+
+func TestV3MultiMonitorCaptureCadence(t *testing.T) {
+    if v3CaptureCadence(3,1,false,false)!=300*time.Millisecond {
+        t.Fatal("single Windows screen should preserve baseline idle cadence")
+    }
+    if v3CaptureCadence(3,4,false,false)!=110*time.Millisecond {
+        t.Fatal("four screens must not wait 1.2 seconds between samples")
+    }
+    if v3CaptureCadence(3,4,true,true)!=66*time.Millisecond {
+        t.Fatal("fast person tracking must preserve fast cadence")
     }
 }
