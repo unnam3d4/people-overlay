@@ -145,3 +145,23 @@ func TestV3FullscreenWinsMoreNeuralSlotsWithoutGridStarvation(t *testing.T) {
     screens[0].captureFailures=0
     if len(v3AllRects(nil))!=0 {t.Fatal("unexpected display")}
 }
+
+func TestV3PrecisionFullscreenDoesNotThrottleNewPersonChecks(t *testing.T) {
+    if v3AIPause(0,250*time.Millisecond,true)!=0{
+        t.Fatal("fullscreen precision mode must not wait idle between neural checks")
+    }
+    if v3FrameWait(0,1,false,false,true)!=85*time.Millisecond {
+        t.Fatal("one full camera must use experimental 85ms capture policy")
+    }
+    for _,profile:=range []int32{1,2,3}{
+        if v3AIPause(profile,250*time.Millisecond,true)<=0{
+            t.Fatalf("grid mode %d should preserve inference throttle",profile)
+        }
+        if v3FrameWait(profile,4,false,false,true)>110*time.Millisecond{
+            t.Fatalf("four monitors should retain fair capture cadence, grid %d",profile)
+        }
+    }
+    if v3AIPause(0,250*time.Millisecond,false)==0 {
+        t.Fatal("low CPU mode must be available for older Windows i3 machines")
+    }
+}
