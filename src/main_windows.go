@@ -154,6 +154,11 @@ var captureCompat atomic.Bool
 var captureProbeRequested atomic.Bool
 var captureProbePercent atomic.Int32
 var probeReady atomic.Bool
+var v3CapturePreviewReady atomic.Bool
+var v3CapturePreviewMean atomic.Int32
+var v3CapturePreviewBlack atomic.Int32
+var v3CapturePreviewRange atomic.Int32
+var v3CapturePreviewSuspect atomic.Bool
 var showNumbers atomic.Bool
 var alarmEnabled atomic.Bool
 var alarmFull atomic.Bool
