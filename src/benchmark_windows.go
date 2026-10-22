@@ -39,6 +39,7 @@ type benchmarkManifest struct {
 	PairedCCTV bool `json:"paired_cctv,omitempty"`
     TightAIBoxes bool `json:"tight_ai_boxes,omitempty"`
     FullDetail bool `json:"fullscreen_detail,omitempty"`
+    FastFullscreen bool `json:"fast_fullscreen,omitempty"`
 	Sensitivity int32             `json:"sensitivity"`
 	Threads     int               `json:"threads"`
 	Contrast    bool              `json:"contrast"`
@@ -234,6 +235,7 @@ func runBenchmarkCLI(args []string) error {
 	}
 	if manifest.PairedCCTV && manifest.Profile!=3 {return fmt.Errorf("paired_cctv only supports 4x4 CCTV profile")}
     if manifest.FullDetail && (manifest.Profile!=0 || manifest.PairedCCTV) {return fmt.Errorf("fullscreen_detail requires single-camera profile")}
+    if manifest.FastFullscreen && manifest.Profile!=0 {return fmt.Errorf("fast_fullscreen requires single-camera profile")}
 	if manifest.Profile < 0 || manifest.Profile > 3 {
 		return fmt.Errorf("invalid profile")
 	}
@@ -391,6 +393,7 @@ func runBenchmarkCLI(args []string) error {
      if floor:=time.Duration(manifest.InferenceDelayFloorMS*float64(time.Millisecond));floor>lastBusy{lastBusy=floor}
 					tracker.maxAIAge = recheckTTL(len(regs), manifest.Profile, lastBusy)
 					nextInference = now.Add(throttleFor(manifest.Profile, lastBusy))
+                    if manifest.FastFullscreen {nextInference=now}
 				} else {
 					result.Rejected = true
 				}
@@ -439,6 +442,7 @@ func runBenchmarkCLI(args []string) error {
 				pendingEpoch = epoch
 				sch.markScanned(index, now, false)
 				nextInference = now.Add(throttleFor(manifest.Profile, lastBusy))
+                    if manifest.FastFullscreen {nextInference=now}
 			}
 			published = append([]TrackView{}, tracker.views(now)...)
 			cadence := 300 * time.Millisecond
@@ -456,7 +460,8 @@ func runBenchmarkCLI(args []string) error {
 			if current, ok := interface{}(&tracker).(interface{ captureCadence(int32) time.Duration }); ok {
 				cadence = current.captureCadence(manifest.Profile)
 			}
-			if manifest.CaptureCadenceMS > 0 {
+			if manifest.FastFullscreen {cadence=85*time.Millisecond}
+            if manifest.CaptureCadenceMS > 0 {
 				cadence = time.Duration(manifest.CaptureCadenceMS * float64(time.Millisecond))
 			}
 			nextCapture = now.Add(cadence)
