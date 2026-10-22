@@ -333,6 +333,7 @@ func v3Analyze(detector *Detector) {
         if !pending && !now.Before(nextInfer) && slot==nextAI {
             index:=s.sch.nextAdaptive(now,profile,s.tracker.schedulerViews(now),s.regions)
             index=s.sch.confirmationRecheck(now,s.tracker.tentativeViews(now),s.regions,index)
+            index=s.sch.ensureFirstCoverage(profile,s.regions,index)
             if index>=0 && index<len(s.regions) {
                 region:=s.regions[index]
                 crop:=copyRegionBGRA(s.snap.pixels,w,h,region)
