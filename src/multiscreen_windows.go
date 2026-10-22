@@ -202,6 +202,15 @@ func v3AIPause(profile int32,busy time.Duration,fullQuality bool) time.Duration 
     if profile==0 && fullQuality{return 0}
     return throttleFor(profile,busy)
 }
+// v3FastAIPause makes the explicit high-CPU fast tracking switch useful on
+// CCTV mosaics too: a full 4x4 sweep has 16 distinct camera crops, so even
+// a fixed 50 ms idle delay costs at least 800 ms per complete sweep.
+// It cannot accelerate neural inference itself and does not affect the
+// economical default on old i3/i5 CPUs.
+func v3FastAIPause(profile int32,busy time.Duration,fullQuality,fastTracking bool) time.Duration {
+    if fastTracking && profile==3{return 0}
+    return v3AIPause(profile,busy,fullQuality)
+}
 func v3FrameWait(profile int32,monitors int,hasPeople,fast,fullQuality bool) time.Duration {
     if profile==0 && fullQuality{return 85*time.Millisecond}
     return v3CaptureCadence(profile,monitors,hasPeople,fast)
@@ -331,7 +340,7 @@ func v3Analyze(detector *Detector) {
                 lastInferenceMS.Store(result.duration.Milliseconds())
                 lastBusy=result.duration
                 s.tracker.maxAIAge=recheckTTL(len(s.regions),s.profile,lastBusy)
-                nextInfer=now.Add(v3AIPause(s.profile,result.duration,v3FullAccuracy.Load()))
+                nextInfer=now.Add(v3FastAIPause(s.profile,result.duration,v3FullAccuracy.Load(),fastAI.Load()))
             default:
                 drain=false
             }
