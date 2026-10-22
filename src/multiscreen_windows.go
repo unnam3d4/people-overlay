@@ -39,6 +39,28 @@ func v3AllRects(monitors []desktopMonitor) []desktopRect {
     return result
 }
 
+// Weighted fair AI dispatch. An expanded CCTV feed receives three slots
+// for each grid monitor slot, without completely starving any monitor.
+// Service counts reflect actual queued neural jobs, not captured display FPS.
+func v3SelectNextAI(screens []*v3Screen,served []int,after int) int {
+    if len(screens)==0 || len(served)<len(screens){return 0}
+    best:=-1
+    bestScore:=0.
+    for d:=1;d<=len(screens);d++{
+        i:=(after+d)%len(screens)
+        screen:=screens[i]
+        if screen==nil||screen.captureFailures>=3{continue}
+        weight:=1.
+        if screen.profile==0{weight=3}
+        score:=float64(served[i])/weight
+        if best<0||score<bestScore {
+            best,bestScore=i,score
+        }
+    }
+    if best<0 {return (after+1)%len(screens)}
+    return best
+}
+
 // A layered overlay occupies the union in virtual desktop coordinates.
 // Source captures are per-monitor: never stretch a camera across two screens.
 func v3UnionRect(rects []desktopRect) desktopRect {
@@ -205,6 +227,7 @@ func v3Analyze(detector *Detector) {
     var nextInfer time.Time
     var lastBusy=time.Duration(350)*time.Millisecond
     var nextAI int
+    var aiServed []int
     var turn int
     var lastMonitorPoll time.Time
     var chosen []desktopRect
@@ -271,6 +294,7 @@ func v3Analyze(detector *Detector) {
                 continue
             }
             nextAI=0
+            aiServed=make([]int,len(screens))
             turn=0
             nextInfer=time.Time{}
             probeAt=time.Time{}
@@ -331,7 +355,7 @@ func v3Analyze(detector *Detector) {
             }
             // Failed capture of the screen expected by the AI scheduler must
             // not block every other display from neural checks.
-            if slot==nextAI {nextAI=(slot+1)%len(screens)}
+            if slot==nextAI {nextAI=v3SelectNextAI(screens,aiServed,slot)}
             if s.captureFailures==1 || s.captureFailures%20==0 {
                 logError(fmt.Errorf("v3 monitor %d BitBlt failed (%d consecutive)",slot+1,s.captureFailures))
             }
@@ -354,6 +378,8 @@ func v3Analyze(detector *Detector) {
                 // from another monitor remains valid.
                 epoch++
                 v3SetScreenProfile(s,detected,epoch)
+                aiServed=make([]int,len(screens))
+                nextAI=slot // immediately prioritize newly expanded RVi camera
                 profile=s.profile
                 nextInfer=time.Time{}
             }
@@ -420,7 +446,8 @@ func v3Analyze(detector *Detector) {
                         // Human-readable status encodes physical monitor and zone.
                         pendingCamera.Store(int32((slot+1)*100+index))
                         s.sch.markScanned(index,now,false)
-                        nextAI=(slot+1)%len(screens)
+                        aiServed[slot]++
+                        nextAI=v3SelectNextAI(screens,aiServed,slot)
                     default:
                     }
                 }
