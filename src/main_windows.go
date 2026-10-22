@@ -93,10 +93,20 @@ type dib struct {
 	pixels             []byte
 }
 
+// A Windows 11 workstation can have four side-by-side 4K monitors:
+// the union is 15360 pixels wide. The former hard 10000px limit prevented
+// ANY overlay from appearing even though individual captures succeeded.
+// Cap actual RAM consumption rather than arbitrary screen width. Never
+// allocate a huge DIB on exotic 8K/many-monitor virtual desktop layouts.
+func v3ValidDIBSize(w, h int) bool {
+    if w < 1 || h < 1 || w > 32767 || h > 32767 {return false}
+    const maxBytes int64 = 256 * 1024 * 1024
+    return int64(w)*int64(h)*4 <= maxBytes
+}
 func newDIB(base uintptr, w, h int) (dib, error) {
-	if w < 1 || h < 1 || w > 10000 || h > 10000 {
-		return dib{}, fmt.Errorf("invalid monitor %dx%d", w, h)
-	}
+    if !v3ValidDIBSize(w,h) {
+        return dib{}, fmt.Errorf("invalid or too large monitor canvas %dx%d (limit 256 MiB RGBA)",w,h)
+    }
 	dc, _, _ := pCompatible.Call(base)
 	if dc == 0 {
 		return dib{}, fmt.Errorf("CreateCompatibleDC failed")
