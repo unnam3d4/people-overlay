@@ -1,0 +1,85 @@
+name: Windows 7 10 target - real CCTV paired ROI experiment
+on:
+  push:
+    branches: [feature/people-overlay-v3]
+    paths:
+      - '.github/workflows/windows-v3-paired-roi.yml'
+      - 'src/scheduler.go'
+      - 'src/benchmark_windows.go'
+      - 'src/vertical_pairs_windows_test.go'
+      - 'scripts/pets_pair_experiment.py'
+      - 'scripts/cctv_paired_comparison.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: v3-paired-roi-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  real-pets2009:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Windows x64 unit tests, including eight-ROI geometry
+        shell: pwsh
+        working-directory: src
+        run: |
+          $env:CGO_ENABLED='0'
+          $env:GOARCH='amd64'
+          go test -tags ncnn ./... -count=1
+          if ($LASTEXITCODE -ne 0) { throw "Windows tests failed" }
+      - name: Fetch old but verified YOLOv8n model+NCNN runtime only
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39613297202
+          name: PeopleOverlay_v1.8_Fast_CCTV_PersonLock_Win7
+          github-token: ${{ github.token }}
+          path: BASE8
+      - name: Compile exact v3 HEAD and package same YOLOv8n in both tests
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED='0'
+          $env:GOARCH='amd64'
+          Push-Location src
+          go build -tags ncnn -trimpath -ldflags '-s -w -H windowsgui' -o ../_v3_experiment_x64.exe .
+          if ($LASTEXITCODE -ne 0) {throw "Win64 build failed"}
+          Pop-Location
+          python scripts/package_current.py --application _v3_experiment_x64.exe --donor BASE8/PeopleOverlay_Win7_NCNN_x64.exe --output _v3_experiment_packed.exe
+          if ($LASTEXITCODE -ne 0) {throw "NCNN packing failed"}
+      - name: Install offline research fixture tooling
+        run: python -m pip install kagglehub pillow==12.1.1 numpy==2.2.6 psutil==7.2.2
+      - name: Get real PETS2009 footage and pinned whole-body bounding boxes
+        run: python scripts/pets2009_person_body_replay.py --output _pets_real_fixture --fps 15 --duration 7
+      - name: Run normal one-camera-per-AI-call mode on filmed people
+        run: python scripts/run_pixel_benchmarks.py --exe v3v8=_v3_experiment_packed.exe --fixtures _pets_real_fixture --output results/replay --scenario grid4_four_feeds --scenario grid4_sixteen_feeds
+      - name: Generate manifest with exact same pixels but vertical two-camera crops
+        run: python scripts/pets_pair_experiment.py --fixtures _pets_real_fixture
+      - name: Run paired 8 crop mode on identical filmed people and identical EXE
+        run: python scripts/run_pixel_benchmarks.py --exe v3v8=_v3_experiment_packed.exe --fixtures _pets_real_fixture --output results/replay --scenario paired_
+      - name: Evaluate complete person-body matching and missed appearances
+        shell: pwsh
+        run: |
+          $reports=@(Get-ChildItem results/replay/*.json | Where-Object { $_.Name -notlike '*.process.json' } | ForEach-Object { $_.FullName })
+          if ($reports.Count -ne 4) {throw "Expected 4 replay reports, got $($reports.Count)"}
+          python scripts/evaluate_pixel_benchmark.py @reports --output results/scored.json
+          if ($LASTEXITCODE -ne 0) {throw "IoU evaluator failed"}
+          python scripts/cctv_paired_comparison.py results/scored.json --out results/PAIRED-RESULTS.md
+          if ($LASTEXITCODE -ne 0) {throw "Paired comparison failed"}
+          Get-Content results/PAIRED-RESULTS.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v3_Windows_PETS2009_8_ROI_vs_16_ROI_body_GT
+          path: |
+            results/
+            _pets_real_fixture/PETS2009_PROVENANCE.json
+          retention-days: 90
