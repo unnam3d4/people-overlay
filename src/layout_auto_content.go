@@ -7,10 +7,10 @@ package main
 // No app-specific hooks, OS dependencies, screenshots, or exported telemetry.
 import ("math";"time")
 
-func v3WindowedSeamScore(p []byte,w,h,grid int,vertical bool) float64 {
+func v3WindowedSeamGeometry(p []byte,w,h,grid int,vertical bool) (float64,int,int) {
     length:=h
     if vertical {length=w}
-    if grid<2||length/grid<48{return 0}
+    if grid<2||length/grid<48{return 0,0,0}
     // Precompute edge responses lazily. Hundreds of origin/pitch proposals
     // reuse the same responses, keeping this bounded on old i3/i5 CPUs.
     edges:=make([]float64,length)
@@ -28,6 +28,7 @@ func v3WindowedSeamScore(p []byte,w,h,grid int,vertical bool) float64 {
     maxPitch:=length/grid+stepPitch
     maxOrigin:=length/4
     best:=0.
+    bestOrigin,bestPitch:=0,0
     for origin:=0;origin<=maxOrigin;origin+=stepOrigin {
         for pitch:=minPitch;pitch<=maxPitch;pitch+=stepPitch {
             if pitch<42||origin+grid*pitch>length+stepPitch {continue}
@@ -56,11 +57,17 @@ func v3WindowedSeamScore(p []byte,w,h,grid int,vertical bool) float64 {
                 // Reject extremely weak seams that coincidentally align.
                 if totalStrength/float64(grid-1)>.45 && score>best {
                     best=score
+                    bestOrigin,bestPitch=origin,pitch
                 }
             }
         }
     }
-    return best
+    return best,bestOrigin,bestPitch
+}
+
+func v3WindowedSeamScore(p []byte,w,h,grid int,vertical bool)float64{
+    score,_,_:=v3WindowedSeamGeometry(p,w,h,grid,vertical)
+    return score
 }
 
 func v3AutoLayoutSwitch(candidate,active int32,votes int,sinceChange time.Duration)bool{
