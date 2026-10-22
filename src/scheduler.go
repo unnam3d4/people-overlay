@@ -203,6 +203,15 @@ func (s *scanScheduler) ensureFirstCoverage(profile int32, regions []scanRegion,
     candidate:=s.firstVisitRegion(regions)
     if candidate<0 {return proposed}
     s.coverageDecision++
+    // When all unseen screens are quiet, preserve most slots for feeds
+    // with already verified humans. Quiet backgrounds still receive
+    // periodic exploration; do not spend 2/3 CPU on empty camera tiles.
+    motion:=s.activity[candidate]
+    if candidate<len(s.coreActivity) && s.coreActivity[candidate]>motion {motion=s.coreActivity[candidate]}
+    if motion<.012 {
+        if s.coverageDecision%4==0 {return candidate}
+        return proposed
+    }
     if s.coverageDecision%3!=0 {return candidate}
     return proposed
 }
