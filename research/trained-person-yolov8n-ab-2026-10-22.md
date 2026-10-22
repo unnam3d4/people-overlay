@@ -30,3 +30,19 @@ User training stopped at epoch 20 under early stopping, best epoch **2**. The me
 Before any release: manually correct person annotations (distant, partially visible, bicycle riders), annotate independent multi-camera/night-time test material, compare person-level precision/recall at 0.22 and 0.32, measure false-alarm rate and real CPU time, and run live VMS capture test when available.
 
 This report is only about model output differences. It has no human identification/facial recognition.
+
+## 2026-10-23 threshold sweep on independent frame-presence labels
+
+User ran `RUN_NEXT_TEST.bat` and returned `SEND_THRESHOLD_STUDY_TO_CHAT.zip`, comparing PyTorch models at 7 confidence thresholds on the SAME 33 frames. Manual presence GT: 12 positive, 19 negative, 2 clipped/ambiguous excluded. This is **one video**, not bbox-level truth nor NCNN benchmark.
+
+| conf | original detected positive/12 | trained detected positive/12 | original false frame/19 | trained false frame/19 |
+|---:|---:|---:|---:|---:|
+| .10 | 12 | 9 | 1 | 2 |
+| .16 | 12 | 8 | 1 | 2 |
+| .22 | 11 | 6 | 1 | 1 |
+| .32 | 11 | 6 | 1 | 1 |
+| .50 | 11 | 5 | 1 | 1 |
+
+At .32 trained misses true-person frames `0006,0044,0045,0046,0047,0048`, while original misses `0046`; lowering trained to .10 still misses `0045,0046,0048`. Trained falsely calls a car a person at `0016` at .32 and adds `0014` at .10; baseline falsely calls a car at `0014`. At .16 baseline catches `0046` without *additional* false-frame alerts on this one clip, but this is **not enough** to retune production sensitivity.
+
+Teacher pseudo labels came from `yolo11m.pt`, `imgsz=1280`, conf .28; for 273 train frames 835 person boxes, with 48 frames without any teacher box. Best student epoch 2, training stopped at epoch 20; teacher-labeled val mAP cannot establish true accuracy. **Do not increase epochs or lower threshold as a substitute for independent bbox corrections.** Need manually verified bbox per person in more footage, particularly cyclists, small/partially cropped people and night/crowded CCTV, before retraining. Retain baseline as production default.
