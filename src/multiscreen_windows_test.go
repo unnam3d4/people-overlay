@@ -75,3 +75,23 @@ func TestV3MultiMonitorCaptureCadence(t *testing.T) {
         t.Fatal("fast person tracking must preserve fast cadence")
     }
 }
+
+func TestV3PublishIndependentScreenCoordinatesAndIds(t *testing.T) {
+    now:=time.Now()
+    union:=desktopRect{Left:-800,Top:0,Right:1280,Bottom:900}
+    screens:=[]*v3Screen{
+        {rect:desktopRect{Left:-800,Top:0,Right:0,Bottom:600},
+            tracker:personTracker{people:[]personTrack{{ID:7,Box:Rect{X:15,Y:20,W:30,H:80},LastAI:now,LastVisual:now}}}},
+        {rect:desktopRect{Left:0,Top:100,Right:1280,Bottom:900},
+            tracker:personTracker{people:[]personTrack{{ID:7,Box:Rect{X:25,Y:35,W:35,H:85},LastAI:now,LastVisual:now}}}},
+    }
+    var old []TrackView
+    v3Publish(screens,union,now,&old)
+    boxes.mu.RLock()
+    got:=append([]TrackView(nil),boxes.items...)
+    boxes.mu.RUnlock()
+    if len(got)!=2 {t.Fatalf("expected independent corner sets from both screens: %+v",got)}
+    if got[0].ID==got[1].ID {t.Fatal("monitor-local track ids collided")}
+    if got[0].Box.X!=15 || got[0].Box.Y!=20 {t.Fatalf("left origin misaligned: %+v",got[0])}
+    if got[1].Box.X!=825 || got[1].Box.Y!=135 {t.Fatalf("right monitor origin misaligned: %+v",got[1])}
+}
