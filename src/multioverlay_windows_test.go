@@ -77,3 +77,35 @@ func TestMonitorGeometryChangeDetectedRegardlessOfMonitorCount(t *testing.T){
     if v3SameRects(old,updated){t.Fatal("resolution change not recognized")}
     if !v3SameRects(old,append([]desktopRect(nil),old...)){t.Fatal("stable topology considered changed")}
 }
+
+func TestOverlayKeepUnchangedScreenWhenOtherScreenResizes(t *testing.T){
+    before:=[]overlayScreenWindow{
+        {hwnd:11,rect:desktopRect{Left:0,Top:0,Right:1920,Bottom:1080}},
+        {hwnd:12,rect:desktopRect{Left:1920,Top:0,Right:3840,Bottom:1080}},
+        {hwnd:13,rect:desktopRect{Left:3840,Top:0,Right:5760,Bottom:1080}},
+    }
+    now:=[]desktopRect{
+        before[0].rect,
+        {Left:1920,Top:0,Right:3520,Bottom:900},
+        before[2].rect,
+    }
+    reuse:=overlayReusePlan(before,now)
+    if len(reuse)!=3 || !reuse[0] || reuse[1] || !reuse[2] {
+        t.Fatalf("unaffected monitor HWND should survive resolution change: %v",reuse)
+    }
+}
+
+func TestOverlayHotplugAndReorderNeverRecycleWrongHWND(t *testing.T){
+    a:=desktopRect{Left:0,Top:0,Right:1600,Bottom:900}
+    b:=desktopRect{Left:-1280,Top:0,Right:0,Bottom:1024}
+    before:=[]overlayScreenWindow{{hwnd:101,rect:a},{hwnd:102,rect:b}}
+    if got:=overlayReusePlan(before,[]desktopRect{a});len(got)!=1||!got[0]{
+        t.Fatalf("screen B unplug must not destroy unchanged screen A: %v",got)
+    }
+    if got:=overlayReusePlan(before,[]desktopRect{b,a});len(got)!=2||got[0]||got[1]{
+        t.Fatalf("screen reorder must not reuse HWND by old slot: %v",got)
+    }
+    if got:=overlayReusePlan([]overlayScreenWindow{{hwnd:0,rect:a}},[]desktopRect{a});len(got)!=1||got[0]{
+        t.Fatalf("invalid HWND must never be considered reusable: %v",got)
+    }
+}
