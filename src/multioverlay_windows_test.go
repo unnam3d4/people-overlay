@@ -120,3 +120,25 @@ func TestMultiOverlayHiddenWindowRecoveryThrottle(t *testing.T){
         t.Fatal("hidden HWND needs ShowWindow retry")
     }
 }
+
+func TestOverlayStaleCornersClearAtPublishExpiry(t *testing.T) {
+    published:=time.Unix(1000,0)
+    tests:=[]struct{
+        label string
+        drawn bool
+        updated time.Time
+        at time.Time
+        want bool
+    }{
+        {"fresh corners",true,published,published.Add(overlayTrackFreshness-time.Millisecond),false},
+        {"expired corners",true,published,published.Add(overlayTrackFreshness),true},
+        {"already blank",false,published,published.Add(2*overlayTrackFreshness),false},
+        {"no publish",true,time.Time{},published,true},
+        {"clock earlier",true,published,published.Add(-time.Second),false},
+    }
+    for _,tc:=range tests {
+        if got:=overlayNeedsStaleClear(tc.drawn,tc.updated,tc.at);got!=tc.want {
+            t.Errorf("%s: got %v want %v",tc.label,got,tc.want)
+        }
+    }
+}

@@ -30,6 +30,7 @@ type overlayPaintState struct {
     lastRaise time.Time
     lastZCheck time.Time
     oldVersion int64
+    hadTrackedCorners bool
     oldEnabled, oldTest bool
     oldColor int32
     good bool
@@ -46,6 +47,9 @@ var (
     pOverlayWindowPID = user32.NewProc("GetWindowThreadProcessId")
     pOverlayCurrentPID = kernel32.NewProc("GetCurrentProcessId")
 )
+// Last delivered tracking snapshot is only safe to keep on screen briefly.
+// Timeout must be enforced by the painter, not only by inference updates.
+const overlayTrackFreshness = 2800 * time.Millisecond
 const overlayTopologyTimerID = 6011
 const overlayWM_TIMER = 0x0113
 
@@ -190,6 +194,13 @@ func overlayBoxOverlapsDisplay(box Rect,w,h int) bool{
 func overlayHiddenNeedsRecovery(visible bool, lastAttempt, now time.Time) bool {
     return !visible && now.Sub(lastAttempt)>=overlayRecheckPeriod
 }
+
+// Clear a stale drawn person immediately, even if no new version is
+// published. Previously the 3.8s repaint cadence could keep ghost corners
+// onscreen for several additional seconds after capture stopped.
+func overlayNeedsStaleClear(hadTracks bool, lastPublish, now time.Time) bool {
+    return hadTracks && (lastPublish.IsZero() || now.Sub(lastPublish)>=overlayTrackFreshness)
+}
 func showOverlayIfHidden(hwnd uintptr) bool {
     if hwnd==0{return false}
     shown,_,_:=pOverlayIsVisible.Call(hwnd)
@@ -304,19 +315,24 @@ func renderMultiOverlay(m *multiOverlay) {
             // A transient GDI failure must not hide people for 3.8 seconds;
             // retry at most once a second to avoid busy spinning on old CPUs.
             needsRetry:=!state.good && now.Sub(state.last)>=time.Second
-            if changed || now.Sub(state.last)>=3800*time.Millisecond || needsRetry {
+            needsStaleClear:=overlayNeedsStaleClear(state.hadTrackedCorners,updated,now)
+            if changed || now.Sub(state.last)>=3800*time.Millisecond || needsRetry || needsStaleClear {
                 for i:=range state.pixels.pixels {state.pixels.pixels[i]=0}
+                state.hadTrackedCorners=false
                 if enabledNow{
                     if testNow{
                         drawCorners(&state.pixels,[]Rect{{X:float64(w)/2-80,Y:float64(h)/2-140,W:160,H:280}},colorNow)
-                    } else if now.Sub(updated)<2800*time.Millisecond{
+                    } else if !updated.IsZero() && now.Sub(updated)<overlayTrackFreshness{
                         local:=make([]TrackView,0,len(views))
                         for _,v:=range views{
                             if !overlayViewBelongsToDisplay(v,index){continue}
                             v.Box=overlayLocalBox(v.Box,s.rect,union)
                             if overlayBoxOverlapsDisplay(v.Box,w,h){local=append(local,v)}
                         }
-                        drawTrackedCorners(&state.pixels,local,colorNow,showNumbers.Load())
+                        if len(local)>0{
+                            drawTrackedCorners(&state.pixels,local,colorNow,showNumbers.Load())
+                            state.hadTrackedCorners=true
+                        }
                     }
                 }
                 pos:=point{X:s.rect.Left,Y:s.rect.Top}
