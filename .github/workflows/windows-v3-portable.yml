@@ -1,7 +1,7 @@
 name: v3 portable field trial - offline models and smoke tests
 on:
   push:
-    branches: [feature/people-overlay-v3, fix/overlay-over-smartpss-v361, feature/v3.6.2-multimonitor-offline]
+    branches: [feature/people-overlay-v3, fix/overlay-over-smartpss-v361, feature/v3.6.2-multimonitor-offline, feature/v3.6.3-stability]
   workflow_dispatch:
 permissions:
   contents: read
@@ -95,7 +95,7 @@ jobs:
           Get-ChildItem DIST/PeopleOverlay_v3_YOLO*.bundle.json | Copy-Item -Destination RELEASE
           Copy-Item README.md,BENCHMARK.md,LICENSE,THIRD_PARTY_NOTICES.txt RELEASE
           @'
-          PEOPLE OVERLAY v3.6.2 - MULTI-MONITOR / OFFLINE EXPERIMENT
+          PEOPLE OVERLAY v3.6.3 - MULTI-MONITOR / OFFLINE STABILITY TRIAL
 
           TARGET: Windows 7 SP1 / Windows 10 x86 (32-bit) and x64 (64-bit).
           NO INTERNET ON OPERATOR PC. Every EXE embeds model.param, model.bin
@@ -127,15 +127,15 @@ jobs:
           Up to 48 cameras and 2-second detection are NOT guaranteed.
           Never use this application as the sole safety/security alarm.
           '@ | Out-File RELEASE/READ-ME-FIRST.txt -Encoding utf8
-          Compress-Archive -Path RELEASE/* -DestinationPath PeopleOverlay_v3_6_2_MULTI_MONITOR_OFFLINE.zip
+          Compress-Archive -Path RELEASE/* -DestinationPath PeopleOverlay_v3_6_3_MULTI_MONITOR_OFFLINE.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: PeopleOverlay_v3_6_2_MULTI_MONITOR_OFFLINE_Win7_10_x64_x86
-          path: PeopleOverlay_v3_6_2_MULTI_MONITOR_OFFLINE.zip
+          name: PeopleOverlay_v3_6_3_MULTI_MONITOR_OFFLINE_Win7_10_x64_x86
+          path: PeopleOverlay_v3_6_3_MULTI_MONITOR_OFFLINE.zip
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
-          name: PeopleOverlay_v3_6_2_packed_model_selftests
+          name: PeopleOverlay_v3_6_3_packed_model_selftests
           path: evidence/
           retention-days: 30

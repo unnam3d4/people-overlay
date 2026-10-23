@@ -235,8 +235,9 @@ func v3Analyze(detector *Detector) {
     req:=make(chan inferenceRequest,1)
     replies:=make(chan inferenceReply,1)
     done:=make(chan struct{})
-    go func(){defer close(done);inferenceWorker(detector,req,replies)}()
-    defer func(){close(req);<-done}()
+    workerQuit:=make(chan struct{})
+    go func(){defer close(done);inferenceWorkerUntil(detector,req,replies,workerQuit)}()
+    defer func(){close(workerQuit);close(req);<-done}()
 
     var screens []*v3Screen
     defer func(){for _,s:=range screens{s.snap.close()}}()

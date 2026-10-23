@@ -33,9 +33,26 @@ type inferenceReply struct {
 
 // YOLO is deliberately confined to one worker on one CPU thread. Capturing
 // screen images and moving existing corner markers never wait for inference.
+// Preserve the old entry point used by standalone test harnesses.
 func inferenceWorker(detector *Detector, requests <-chan inferenceRequest, replies chan<- inferenceReply) {
+	inferenceWorkerUntil(detector, requests, replies, nil)
+}
+
+// The capture scheduler sets pending=true until it sees a reply. Silently
+// dropping a completed result after 500ms can freeze all future AI requests.
+func deliverInferenceReply(replies chan<- inferenceReply, result inferenceReply, quit <-chan struct{}) bool {
+	select {
+	case replies <- result:
+		return true
+	case <-quit:
+		return false
+	}
+}
+func inferenceWorkerUntil(detector *Detector, requests <-chan inferenceRequest, replies chan<- inferenceReply, quit <-chan struct{}) {
 	for !stopped.Load() {
 		select {
+		case <-quit:
+			return
 		case <-time.After(200 * time.Millisecond):
 			continue
 		case req, ok := <-requests:
@@ -73,11 +90,9 @@ func inferenceWorker(detector *Detector, requests <-chan inferenceRequest, repli
 			}
 			lastDecodeUS.Store(time.Since(decodeStart).Microseconds())
 			result := inferenceReply{pixels: req.pixels, detected: found, zone: req.zone, display: req.display, epoch: req.epoch, captured: req.captured, capturedAt: req.capturedAt, duration: time.Since(begun), err: err}
-			// One result slot suffices because requests are unbuffered and producer
-			// deliberately never queues stale camera images.
-			select {
-			case replies <- result:
-			case <-time.After(500 * time.Millisecond):
+			// Backpressure pauses delivery; only shutdown may discard a reply.
+			if !deliverInferenceReply(replies, result, quit) {
+				return
 			}
 		}
 	}
@@ -98,8 +113,9 @@ func analyze(d *Detector) {
 	req := make(chan inferenceRequest, 1)
 	replies := make(chan inferenceReply, 1)
 	workerDone := make(chan struct{})
-	go func() { defer close(workerDone); inferenceWorker(d, req, replies) }()
-	defer func() { close(req); <-workerDone }()
+	workerQuit := make(chan struct{})
+	go func() { defer close(workerDone); inferenceWorkerUntil(d, req, replies, workerQuit) }()
+	defer func() { close(workerQuit); close(req); <-workerDone }()
 
 	var sch scanScheduler
 	var tracker personTracker
