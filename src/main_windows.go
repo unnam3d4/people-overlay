@@ -473,7 +473,7 @@ func makeOverlay(w, h int) (uintptr, error) {
 	return wnd, nil
 }
 func registerHotkeys() error {
-	for _, p := range [][2]uintptr{{1, 0x78}, {2, 0x79}, {3, '1'}, {4, '2'}, {5, '3'}, {6, 0x75}, {7, 0x77}, {8, 0x76}} {
+	for _, p := range [][2]uintptr{{1, 0x78}, {2, 0x79}, {3, '1'}, {4, '2'}, {5, '3'}, {6, 0x75}, {7, 0x77}, {8, 0x76}, {9, 0x74}} {
 		ok, _, e := pRegister.Call(0, p[0], modCtrlAlt, p[1])
 		if ok == 0 {
 			// Alarm/menu shortcuts are optional; another application can reserve F7/F8.
@@ -604,7 +604,7 @@ func main() {
 		return
 	}
 	defer func() {
-		for i := 1; i <= 8; i++ {
+		for i := 1; i <= 9; i++ {
 			pUnregister.Call(0, uintptr(i))
 		}
 	}()
@@ -665,6 +665,13 @@ func main() {
 					stopAviationAlert()
 				}
 				saveAlarmPreferences()
+            case 9:
+                // Ctrl+Alt+F5: manually reassert topmost Z-order (SMART PSS
+                // diagnostic) and ask painter to refresh without restarting AI.
+                if !raiseOverlayAboveVideo(hwnd) {
+                    logError(fmt.Errorf("manual overlay TOPMOST failed"))
+                }
+                version.Add(1)
 			}
 		} else {
 			pTranslate.Call(uintptr(unsafe.Pointer(&m)))
