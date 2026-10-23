@@ -28,6 +28,7 @@ type overlayPaintState struct {
     pixels dib
     last time.Time
     lastRaise time.Time
+    lastZCheck time.Time
     oldVersion int64
     oldEnabled, oldTest bool
     oldColor int32
@@ -248,8 +249,14 @@ func renderMultiOverlay(m *multiOverlay) {
                 state=&overlayPaintState{oldVersion:-1}
                 layers[s.hwnd]=state
             }
-            if overlayNeedsRaise(fg,previousForeground,
-                overlayForeignOccluderAbove(s.hwnd,s.rect,own),state.lastRaise,now) {
+            // Query expensive window enumeration only on foreground change
+            // or once per watchdog interval, never every rendered frame.
+            foreignAbove:=false
+            if fg!=previousForeground || now.Sub(state.lastZCheck)>=overlayRecheckPeriod{
+                foreignAbove=overlayForeignOccluderAbove(s.hwnd,s.rect,own)
+                state.lastZCheck=now
+            }
+            if overlayNeedsRaise(fg,previousForeground,foreignAbove,state.lastRaise,now) {
                 if !raiseOverlayAboveVideo(s.hwnd){
                     logError(fmt.Errorf("overlay display %d SetWindowPos failed",index+1))
                 }
@@ -270,7 +277,10 @@ func renderMultiOverlay(m *multiOverlay) {
             changed:=currentVersion!=state.oldVersion ||
                 colorNow!=state.oldColor || enabledNow!=state.oldEnabled ||
                 testNow!=state.oldTest
-            if changed || now.Sub(state.last)>=3800*time.Millisecond {
+            // A transient GDI failure must not hide people for 3.8 seconds;
+            // retry at most once a second to avoid busy spinning on old CPUs.
+            needsRetry:=!state.good && now.Sub(state.last)>=time.Second
+            if changed || now.Sub(state.last)>=3800*time.Millisecond || needsRetry {
                 for i:=range state.pixels.pixels {state.pixels.pixels[i]=0}
                 if enabledNow{
                     if testNow{
