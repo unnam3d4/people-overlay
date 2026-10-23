@@ -2,7 +2,7 @@
 
 package main
 
-import "testing"
+import ("testing"; "time")
 
 func TestMultiOverlayLocalCoordinatesWithNegativeMonitorOrigin(t *testing.T) {
     rects:=[]desktopRect{
@@ -107,5 +107,16 @@ func TestOverlayHotplugAndReorderNeverRecycleWrongHWND(t *testing.T){
     }
     if got:=overlayReusePlan([]overlayScreenWindow{{hwnd:0,rect:a}},[]desktopRect{a});len(got)!=1||got[0]{
         t.Fatalf("invalid HWND must never be considered reusable: %v",got)
+    }
+}
+
+func TestMultiOverlayHiddenWindowRecoveryThrottle(t *testing.T){
+    now:=time.Unix(500,0)
+    if overlayHiddenNeedsRecovery(true,time.Time{},now){t.Fatal("visible overlay recovery")}
+    if overlayHiddenNeedsRecovery(false,now,now.Add(overlayRecheckPeriod-time.Millisecond)){
+        t.Fatal("hidden HWND recovery should be throttled")
+    }
+    if !overlayHiddenNeedsRecovery(false,now,now.Add(overlayRecheckPeriod)){
+        t.Fatal("hidden HWND needs ShowWindow retry")
     }
 }

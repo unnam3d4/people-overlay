@@ -153,6 +153,10 @@ func (m *multiOverlay) raiseAll(){
     m.mu.Lock()
     defer m.mu.Unlock()
     for i,s:=range m.screens{
+        // TOPMOST alone does not unhide a window.
+        if !showOverlayIfHidden(s.hwnd) {
+            logError(fmt.Errorf("manual display %d ShowWindow failed",i+1))
+        }
         if !raiseOverlayAboveVideo(s.hwnd) {
             logError(fmt.Errorf("manual topmost display %d failed",i+1))
         }
@@ -179,6 +183,20 @@ func overlayLocalBox(box Rect, screen,union desktopRect) Rect{
 func overlayBoxOverlapsDisplay(box Rect,w,h int) bool{
     return box.X< float64(w) && box.Y< float64(h) &&
         box.X+box.W>0 && box.Y+box.H>0
+}
+
+// A hidden HWND may still accept GDI updates while showing no markers.
+// Retry without activation, with a bounded rate on slow Windows 7 CPUs.
+func overlayHiddenNeedsRecovery(visible bool, lastAttempt, now time.Time) bool {
+    return !visible && now.Sub(lastAttempt)>=overlayRecheckPeriod
+}
+func showOverlayIfHidden(hwnd uintptr) bool {
+    if hwnd==0{return false}
+    shown,_,_:=pOverlayIsVisible.Call(hwnd)
+    if shown!=0{return true}
+    pShow.Call(hwnd,4) // SW_SHOWNOACTIVATE: keep focus inside CCTV client
+    shown,_,_=pOverlayIsVisible.Call(hwnd)
+    return shown!=0
 }
 
 // Check only foreign visible windows actually occupying this monitor.
@@ -256,7 +274,13 @@ func renderMultiOverlay(m *multiOverlay) {
                 foreignAbove=overlayForeignOccluderAbove(s.hwnd,s.rect,own)
                 state.lastZCheck=now
             }
-            if overlayNeedsRaise(fg,previousForeground,foreignAbove,state.lastRaise,now) {
+            visible,_,_:=pOverlayIsVisible.Call(s.hwnd)
+            if overlayHiddenNeedsRecovery(visible!=0,state.lastRaise,now) ||
+                overlayNeedsRaise(fg,previousForeground,foreignAbove,state.lastRaise,now) {
+                if !showOverlayIfHidden(s.hwnd) {
+                    logError(fmt.Errorf("overlay display %d ShowWindow failed",index+1))
+                    state.good=false
+                }
                 if !raiseOverlayAboveVideo(s.hwnd){
                     logError(fmt.Errorf("overlay display %d SetWindowPos failed",index+1))
                 }
@@ -313,6 +337,9 @@ func renderMultiOverlay(m *multiOverlay) {
                     logError(fmt.Errorf("display %d UpdateLayeredWindow failed",index+1))
                 }
             }
+            // GDI write success alone is insufficient if HWND is hidden.
+            isVisible,_,_:=pOverlayIsVisible.Call(s.hwnd)
+            if isVisible==0 {state.good=false}
             if state.good {mask|=1<<uint(index)}
         }
         overlayPaintOKMask.Store(mask)
