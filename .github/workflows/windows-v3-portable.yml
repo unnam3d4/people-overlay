@@ -55,6 +55,11 @@ jobs:
             python scripts/package_current.py --application "app-$arch.exe" --donor "BASE26/PeopleOverlay_v1.9_YOLO26n_$arch.exe" --output "DIST/PeopleOverlay_v3_YOLO26n_$arch.exe"
             python scripts/package_current.py --application "app-$arch.exe" --donor "BASE8/PeopleOverlay_Win7_NCNN_$arch.exe" --output "DIST/PeopleOverlay_v3_YOLOv8n_$arch.exe"
           done
+      - name: Verify standalone offline x64/x86 EXEs include matching native DLL and AI resources
+        shell: pwsh
+        run: |
+          python scripts/verify_offline_bundle.py DIST
+          if ($LASTEXITCODE -ne 0) { throw "Offline model/DLL bundle validation failed" }
       - uses: actions/upload-artifact@v4
         with:
           name: v3-portable-unverified-internal
@@ -90,25 +95,46 @@ jobs:
           Get-ChildItem DIST/PeopleOverlay_v3_YOLO*.bundle.json | Copy-Item -Destination RELEASE
           Copy-Item README.md,BENCHMARK.md,LICENSE,THIRD_PARTY_NOTICES.txt RELEASE
           @'
-          PEOPLE OVERLAY v3 - EXPERIMENTAL FIELD TRIAL
-          Windows 7 and 10 targeted; real Windows 7 and four physical monitor RVi tests NOT COMPLETED.
-          Runs offline; no Python required on test PC.
-          EXE uses monitor union, four independent capture/tracking contexts and one shared CPU NCNN worker.
-          Only run ONE EXE: choose x64 or x86, YOLOv8n RECOMMENDED; YOLO26n manual fallback.
-          Ctrl+Alt+F9: toggle. Ctrl+Alt+F10: exit. Ctrl+Alt+F7: mute.
-          Tray -> capture screenshot monitor selector: diagnostic ONLY, detection runs on all displays.
-          WARNING: Up to 48 camera tiles and two-second detection NOT performance-validated.
-          WARNING: v3 YOLOv8n achieved only ~8.2% whole-body recall on 16-feed PETS replay; NOT fit for unattended safety/security alerts.
-          Never rely on trial as sole surveillance/safety system.
+          PEOPLE OVERLAY v3.6.2 - MULTI-MONITOR / OFFLINE EXPERIMENT
+
+          TARGET: Windows 7 SP1 / Windows 10 x86 (32-bit) and x64 (64-bit).
+          NO INTERNET ON OPERATOR PC. Every EXE embeds model.param, model.bin
+          and matching ncnnbridge.dll. First start extracts these to
+          %LOCALAPPDATA%\\PeopleOverlay; a writable user profile is required.
+          No Python, GPU, CUDA or separate AI model download is needed.
+          32-bit computers require CPU SSE2.
+
+          CHOOSE ONLY ONE EXE:
+          * For Windows x64: PeopleOverlay_v3_YOLO26n_x64.exe
+          * For Windows x86: PeopleOverlay_v3_YOLO26n_x86.exe
+          YOLO26n is the user's preferred tested variant; YOLOv8n alternatives
+          are included for comparison, but NOT simultaneous use.
+
+          Detection: all physical monitors (up to 4) automatically.
+          Every monitor has an independent click-through corner layer,
+          video capture, tracker and Auto layout. The CPU AI worker is shared.
+          Tray 'Snapshot: monitor N' selects only the diagnostic screenshot.
+          Ctrl+Alt+F9: toggle detection; Ctrl+Alt+F10: exit;
+          Ctrl+Alt+F7: mute; Ctrl+Alt+F6: test corners on EACH display;
+          Ctrl+Alt+F5: restore transparent corner windows on ALL displays.
+          Before starting a new build CLOSE the older running EXE.
+
+          WINDOWS 7/10 x86/x64 CI tests, bundled-model SHA256, correct DLL
+          architecture and packaged positive/negative person tests must pass.
+          Real Windows 7, physical 4-monitor RVi and SmartPSS fullscreen
+          modes were NOT tested in CI; DX/GPU exclusive surfaces may still
+          hide overlays. These are known remaining compatibility risks.
+          Up to 48 cameras and 2-second detection are NOT guaranteed.
+          Never use this application as the sole safety/security alarm.
           '@ | Out-File RELEASE/READ-ME-FIRST.txt -Encoding utf8
-          Compress-Archive -Path RELEASE/* -DestinationPath PeopleOverlay_v3_EXPERIMENTAL_OFFLINE.zip
+          Compress-Archive -Path RELEASE/* -DestinationPath PeopleOverlay_v3_6_2_MULTI_MONITOR_OFFLINE.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: PeopleOverlay_v3_EXPERIMENTAL_OFFLINE_Win7_10_x64_x86
+          name: PeopleOverlay_v3_6_2_MULTI_MONITOR_OFFLINE_Win7_10_x64_x86
           path: PeopleOverlay_v3_EXPERIMENTAL_OFFLINE.zip
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
-          name: PeopleOverlay_v3_packed_model_selftests
+          name: PeopleOverlay_v3_6_2_packed_model_selftests
           path: evidence/
           retention-days: 30
