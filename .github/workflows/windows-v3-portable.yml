@@ -1,7 +1,7 @@
 name: v3 portable field trial - offline models and smoke tests
 on:
   push:
-    branches: [feature/people-overlay-v3, fix/overlay-over-smartpss-v361]
+    branches: [feature/people-overlay-v3, fix/overlay-over-smartpss-v361, feature/v3.6.2-multimonitor-offline]
   workflow_dispatch:
 permissions:
   contents: read
