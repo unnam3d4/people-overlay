@@ -88,18 +88,33 @@ func (m *multiOverlay) setRects(rects []desktopRect) error {
     existing:=make([]desktopRect,len(m.screens))
     for i,s:=range m.screens {existing[i]=s.rect}
     if v3SameRects(existing,rects){return nil}
-    pending:=make([]overlayScreenWindow,0,len(rects))
+    // Reuse unchanged indexed monitors: hot-plugging or resizing one
+    // screen must NOT destroy healthy overlays on the other screens.
+    // Only reuse the same index+rect: changed indices represent different
+    // camera ownership and must be reinitialised.
+    pending:=make([]overlayScreenWindow,len(rects))
+    reused:=make([]bool,len(rects))
+    created:=make([]uintptr,0,len(rects))
     for i,r:=range rects{
+        if i<len(m.screens) && m.screens[i].rect==r && m.screens[i].hwnd!=0{
+            pending[i]=m.screens[i]
+            reused[i]=true
+            continue
+        }
         hwnd,err:=makeOverlayForRect(r,i)
         if err!=nil{
-            for _,p:=range pending {pOverlayDestroyWindow.Call(p.hwnd)}
-            return err // preserve old overlay windows if topology update fails
+            // Transactional rollback: old windows remain valid and visible.
+            for _,newHWND:=range created {pOverlayDestroyWindow.Call(newHWND)}
+            return err
         }
-        pending=append(pending,overlayScreenWindow{hwnd:hwnd,rect:r})
+        pending[i]=overlayScreenWindow{hwnd:hwnd,rect:r}
+        created=append(created,hwnd)
     }
     old:=m.screens
     m.screens=pending
-    for _,s:=range old {pOverlayDestroyWindow.Call(s.hwnd)}
+    for i,s:=range old {
+        if i>=len(reused)||!reused[i]{pOverlayDestroyWindow.Call(s.hwnd)}
+    }
     // Old tracks use the OLD union origin / monitor indices.
     // Invalidate promptly to prevent drawing a person on a different screen.
     boxes.mu.Lock()
