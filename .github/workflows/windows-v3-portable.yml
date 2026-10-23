@@ -131,7 +131,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: PeopleOverlay_v3_6_2_MULTI_MONITOR_OFFLINE_Win7_10_x64_x86
-          path: PeopleOverlay_v3_EXPERIMENTAL_OFFLINE.zip
+          path: PeopleOverlay_v3_6_2_MULTI_MONITOR_OFFLINE.zip
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
