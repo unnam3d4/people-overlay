@@ -185,3 +185,20 @@ func TestV3FastTrackingSkipsFourByFourIdleOnlyWhenEnabled(t *testing.T) {
         }
     }
 }
+
+func TestV3MonitorTopologyInvalidatesCachedGeometryImmediately(t *testing.T) {
+    now:=time.Unix(1600000000,0)
+    polled:=now.Add(-100*time.Millisecond)
+    if v3NeedsMonitorPoll(now,polled,2,10,10) {
+        t.Fatal("steady monitor geometry should not be enumerated each capture")
+    }
+    if !v3NeedsMonitorPoll(now,polled,2,11,10) {
+        t.Fatal("new monitor configuration must bypass the one-second cache")
+    }
+    if !v3NeedsMonitorPoll(now,polled,0,10,10) {
+        t.Fatal("empty geometry needs an immediate query")
+    }
+    if !v3NeedsMonitorPoll(now,now.Add(-time.Second),2,10,10) {
+        t.Fatal("scheduled monitoring refresh is missing")
+    }
+}

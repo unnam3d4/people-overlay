@@ -81,6 +81,13 @@ func v3SameRects(a,b []desktopRect) bool {
     return true
 }
 
+// A topology notification from the UI thread must invalidate the cached
+// monitor geometry immediately. Waiting for the next one-second poll would
+// re-create old-sized capture contexts and briefly publish wrong coordinates.
+func v3NeedsMonitorPoll(now,lastPoll time.Time,knownScreens int,generation,lastGeneration uint64) bool {
+    return knownScreens==0 || generation!=lastGeneration || now.Sub(lastPoll)>=time.Second
+}
+
 func v3RelativeBox(b Rect, monitor, union desktopRect) Rect {
     b.X+=float64(monitor.Left-union.Left)
     b.Y+=float64(monitor.Top-union.Top)
@@ -282,11 +289,11 @@ func v3Analyze(detector *Detector) {
         }
 
         now:=time.Now()
-        if now.Sub(lastMonitorPoll)>time.Second || len(chosen)==0 {
+        generation:=configurationGeneration.Load()
+        if v3NeedsMonitorPoll(now,lastMonitorPoll,len(chosen),generation,lastGeneration) {
             chosen=v3AllRects(monitorList())
             lastMonitorPoll=now
         }
-        generation:=configurationGeneration.Load()
         configuredProfile:=scanMode.Load()
         if configuredProfile < -1 || configuredProfile>3 {configuredProfile=3}
         if !v3SameRects(lastRects,chosen) || generation!=lastGeneration || len(screens)==0 {
