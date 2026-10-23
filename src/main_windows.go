@@ -584,13 +584,15 @@ func main() {
 		return
 	}
 	defer d.Close()
-	w, h := screenSize()
-	hwnd, e := makeOverlay(w, h)
-	if e != nil {
-		logError(e)
-		alert("People Overlay AI", e.Error())
-		return
-	}
+    // All monitors get independent layered HWNDs. No union-sized surface.
+    overlays, e := createMultiOverlay()
+    if e != nil {
+        logError(e)
+        alert("People Overlay AI", e.Error())
+        return
+    }
+    defer overlays.close()
+    hwnd := overlays.first()
 	enabled.Store(true)
 	colour.Store(1)
 	scanMode.Store(-1) // auto: precise fullscreen first, grid only after confirming boundaries
@@ -618,9 +620,17 @@ func main() {
 	defer stopAviationAlert()
 	var workers sync.WaitGroup
 	workers.Add(2)
-	go func() { defer workers.Done(); render(hwnd) }()
+	go func() { defer workers.Done(); renderMultiOverlay(overlays) }()
 	go func() { defer workers.Done(); v3Analyze(d) }()
 	defer func() { stopped.Store(true); workers.Wait() }()
+    // Own-thread WM_TIMER keeps monitor hotplug, resolution and DPI updates
+    // on the same Win32 thread which created the layered windows (Win7 safe).
+    timer,_,_:=pOverlaySetTimer.Call(0,overlayTopologyTimerID,1000,0)
+    if timer==0 {
+        logError(fmt.Errorf("multi-overlay SetTimer failed: hotplug redraw requires restart"))
+    } else {
+        defer pOverlayKillTimer.Call(0,overlayTopologyTimerID)
+    }
 	var m message
 	for {
 		r, _, _ := pMessage.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
@@ -631,6 +641,10 @@ func main() {
 			tray.reAdd()
 			continue
 		}
+        if m.Message==overlayWM_TIMER && m.WParam==overlayTopologyTimerID {
+            overlays.checkTopology()
+            continue
+        }
         if m.Message==trayMessage && m.HWND==tray.hwnd {
             // Fallback for Explorer implementations which POST icon events
             // rather than sending them directly to the tray owner's WndProc.
@@ -668,9 +682,7 @@ func main() {
             case 9:
                 // Ctrl+Alt+F5: manually reassert topmost Z-order (SMART PSS
                 // diagnostic) and ask painter to refresh without restarting AI.
-                if !raiseOverlayAboveVideo(hwnd) {
-                    logError(fmt.Errorf("manual overlay TOPMOST failed"))
-                }
+                overlays.raiseAll()
                 version.Add(1)
 			}
 		} else {
