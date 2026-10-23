@@ -359,6 +359,8 @@ func render(hwnd uintptr) {
     // Keep the rendering geometry cached for the same bounded 1s interval.
     var lastMonitorPoll time.Time
     var cachedMonitors []desktopRect
+    var previousForeground uintptr
+    var lastOverlayRaise time.Time
 	var oldEnabled, oldTest bool
 	var oldColor int32
 	for !stopped.Load() {
@@ -367,6 +369,19 @@ func render(hwnd uintptr) {
             lastMonitorPoll=time.Now()
         }
         target:=v3UnionRect(cachedMonitors)
+        // The browser / SMART PSS window may have its own topmost surface.
+        // Lift the transparent click-through layer as soon as focus switches
+        // or after another topmost window covers it. Do this BEFORE the
+        // early return which otherwise skips any repaint for up to 3.8s.
+        foreground,_,_:=pOverlayForeground.Call()
+        nowZ:=time.Now()
+        if overlayNeedsRaise(foreground,previousForeground,overlayWindowAbove(hwnd),lastOverlayRaise,nowZ) {
+            if !raiseOverlayAboveVideo(hwnd){
+                logError(fmt.Errorf("overlay SetWindowPos TOPMOST failed"))
+            }
+            lastOverlayRaise=nowZ
+        }
+        previousForeground=foreground
         w,h:=target.width(),target.height()
 		if w < 64 || h < 64 {
 			time.Sleep(time.Second)
@@ -448,6 +463,9 @@ func makeOverlay(w, h int) (uintptr, error) {
 		return 0, fmt.Errorf("CreateWindowExW failed: %v", e)
 	}
 	pShow.Call(wnd, 4)
+    // Ensure the marker layer starts above already-running VMS windows.
+    // It is WS_EX_NOACTIVATE|WS_EX_TRANSPARENT: input remains with RVi.
+    if !raiseOverlayAboveVideo(wnd) {logError(fmt.Errorf("initial overlay TOPMOST failed"))}
 	ret, _, _ := pAffinity.Call(wnd, 0x11)
 	if ret == 0 {
 		pAffinity.Call(wnd, 1)
