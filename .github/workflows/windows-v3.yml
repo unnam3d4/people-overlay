@@ -4,6 +4,7 @@ on:
     branches:
       - feature/people-overlay-v3
       - fix/overlay-over-smartpss-v361
+      - feature/v3.6.2-multimonitor-offline
   workflow_dispatch:
 
 permissions:
