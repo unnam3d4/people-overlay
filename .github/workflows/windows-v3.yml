@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/people-overlay-v3
+      - fix/overlay-over-smartpss-v361
   workflow_dispatch:
 
 permissions:
