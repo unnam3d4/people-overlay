@@ -305,6 +305,15 @@ func (t *appTray) popupMenu() {
     trayAppendMenu.Call(menu,menuString|1,0,uintptr(unsafe.Pointer(infoAll)))
     monitors:=monitorList()
     if len(monitors)>4 {monitors=monitors[:4]}
+    // UpdateLayeredWindow success is not proof of actual visibility in a
+    // protected/exclusive full-screen VMS. Expose only the Win32 result.
+    painted:=0
+    mask:=overlayPaintOKMask.Load()
+    for i:=range monitors {if mask&(1<<uint(i))!=0 {painted++}}
+    layerStatus:=syscall.StringToUTF16Ptr(fmt.Sprintf(
+        "Окна уголков GDI: %d/%d | ошибок обновления: %d",
+        painted,len(monitors),overlayPaintFailures.Load()))
+    trayAppendMenu.Call(menu,menuString|1,0,uintptr(unsafe.Pointer(layerStatus)))
     selection:=displaySelection.Load()
     for i,m:=range monitors {
         suffix:=""
