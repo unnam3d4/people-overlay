@@ -20,7 +20,7 @@ def machine(pe):
     if len(pe)<0x40 or pe[:2]!=b"MZ":
         raise ValueError("not Windows PE executable")
     off=struct.unpack_from("<I",pe,0x3C)[0]
-    if off+6>len(pe) or pe[off:off+4]!=b"PE\\x00\\x00":
+    if off+6>len(pe) or pe[off:off+4]!=bytes((80,69,0,0)):
         raise ValueError("invalid PE NT header")
     return struct.unpack_from("<H",pe,off+4)[0]
 
