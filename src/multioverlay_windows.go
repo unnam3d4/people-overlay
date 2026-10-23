@@ -80,6 +80,16 @@ func createMultiOverlay()(*multiOverlay,error){
     return m,nil
 }
 
+// A reused HWND is safe only for the same physical screen slot and geometry.
+// This pure policy is regression-tested without requiring a Windows desktop.
+func overlayReusePlan(existing []overlayScreenWindow, next []desktopRect) []bool {
+    reused:=make([]bool,len(next))
+    for i,rect:=range next {
+        reused[i]=i<len(existing) && existing[i].hwnd!=0 && existing[i].rect==rect
+    }
+    return reused
+}
+
 // Called only from the main message loop; the renderer holds mu while using
 // HWNDs so a display can never disappear midway through UpdateLayeredWindow.
 func (m *multiOverlay) setRects(rects []desktopRect) error {
@@ -93,12 +103,11 @@ func (m *multiOverlay) setRects(rects []desktopRect) error {
     // Only reuse the same index+rect: changed indices represent different
     // camera ownership and must be reinitialised.
     pending:=make([]overlayScreenWindow,len(rects))
-    reused:=make([]bool,len(rects))
+    reused:=overlayReusePlan(m.screens,rects)
     created:=make([]uintptr,0,len(rects))
     for i,r:=range rects{
-        if i<len(m.screens) && m.screens[i].rect==r && m.screens[i].hwnd!=0{
+        if reused[i] {
             pending[i]=m.screens[i]
-            reused[i]=true
             continue
         }
         hwnd,err:=makeOverlayForRect(r,i)
