@@ -56,13 +56,13 @@ func TestMultiOverlayClipOffscreenBoxes(t *testing.T){
 }
 
 func TestMultiOverlayRectsAvoidGlobalCanvasLimit(t *testing.T){
-    // Four 4K screens placed side-by-side exceed the 256 MiB union DIB cap
+    // Four 8K screens placed side-by-side exceed the 256 MiB union DIB cap
     // but EACH individual display remains supported with per-screen HWNDs.
     rects:=[]desktopRect{
-        {Left:0,Top:0,Right:3840,Bottom:2160},
-        {Left:3840,Top:0,Right:7680,Bottom:2160},
-        {Left:7680,Top:0,Right:11520,Bottom:2160},
-        {Left:11520,Top:0,Right:15360,Bottom:2160},
+        {Left:0,Top:0,Right:7680,Bottom:4320},
+        {Left:7680,Top:0,Right:15360,Bottom:4320},
+        {Left:15360,Top:0,Right:23040,Bottom:4320},
+        {Left:23040,Top:0,Right:30720,Bottom:4320},
     }
     u:=v3UnionRect(rects)
     if v3ValidDIBSize(u.width(),u.height()){t.Fatal("expected former union-cap issue")}
