@@ -230,6 +230,15 @@ func (s *scanScheduler) ensureFirstCoverage(profile int32, regions []scanRegion,
     candidate:=s.firstVisitRegion(regions)
     if candidate<0 {return proposed}
     s.coverageDecision++
+    // The small PicoDet CPU model can examine camera crops cheaply.
+    // During INITIAL coverage, allocate 2/3 of inference slots to never-seen
+    // tiles, including stationary people. The other 1/3 still confirms and
+    // revisits existing tracks. After all crops were visited the old adaptive
+    // policy is used; no extra inferences or higher CPU concurrency.
+    if picoCoverageBurst {
+        if s.coverageDecision%3 != 0 { return candidate }
+        return proposed
+    }
     // When all unseen screens are quiet, preserve most slots for feeds
     // with already verified humans. Quiet backgrounds still receive
     // periodic exploration; do not spend 2/3 CPU on empty camera tiles.

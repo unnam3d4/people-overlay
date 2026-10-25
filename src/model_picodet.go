@@ -8,7 +8,13 @@ import "math"
 // *stretched* resize (keep_ratio=False in PaddleDetection TestReader).
 // Do not feed YOLO's aspect-preserving letterbox to this model.
 const modelInputSize = 320
-const minSelftestPersons = 1
+const minSelftestPersons = 3
+
+// PicoDet-S 320 uses the same number of AI calls and CPU threads as before,
+// while covering unseen tiles sooner. A confirmed person should not be
+// artificially excluded just because there are 49+ persons in one display.
+const picoCoverageBurst = true
+const modelMaxTrackedPeople = 64
 
 func prepareActiveModelFrame(src []byte, w,h int, reg scanRegion, enhance bool)([]float32,float64,float64,float64){
 	const n=modelInputSize

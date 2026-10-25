@@ -91,7 +91,7 @@ func (t *personTracker) trackVisible(p personTrack) bool {
 }
 
 const trackingDownscale = 2
-const maxTrackedPeople = 48
+const maxTrackedPeople = modelMaxTrackedPeople
 
 func (t *personTracker) layout(w, h, cols int) {
 	t.screenW, t.screenH, t.columns = w, h, cols

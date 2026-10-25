@@ -13,3 +13,7 @@ func decodeActiveModel(out []float32, n, w, h int, scale, padX, padY float64, th
 func prepareActiveModelFrame(src []byte, w,h int, reg scanRegion, enhance bool)([]float32,float64,float64,float64){
     return prepareRegionFrameEnhanced(src,w,h,reg,enhance)
 }
+
+// Preserve historical v3.6.3 behavior for all YOLO / default builds.
+const picoCoverageBurst = false
+const modelMaxTrackedPeople = 48
