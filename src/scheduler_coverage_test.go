@@ -38,7 +38,12 @@ func TestV3CCTVQuietBackgroundPreservesTrackingQuota(t *testing.T){
         if got==1 {kept++}
         scheduler.markScanned(got,now.Add(time.Duration(n)*time.Second),false)
     }
-    if kept<8 {t.Fatalf("quiet camera enumeration stole %d of 12 tracked-person scans",12-kept)}
+    // PicoDet has a cheaper 320px model: reserve one in three neural
+    // checks for known people during the first 16-camera discovery sweep.
+    // YOLO keeps the historical 8/12 known-track quota unchanged.
+    minimum:=8
+    if picoCoverageBurst {minimum=4}
+    if kept<minimum {t.Fatalf("known-person review quota underflow: got %d of 12, need %d",kept,minimum)}
 }
 
 func TestV3NoCoverageOverrideForFullscreen(t *testing.T) {
