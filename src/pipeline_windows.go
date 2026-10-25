@@ -66,7 +66,7 @@ func inferenceWorkerUntil(detector *Detector, requests <-chan inferenceRequest, 
 			// Bilinear resize, contrast and float conversion execute only here.
 			// This prevents old single-core Windows 7 systems from pausing overlay
 			// tracking while preparing a costly 640x640 neural input.
-			input, scale, px, py := prepareRegionFrameEnhanced(req.pixels, req.zone.w, req.zone.h,
+			input, scale, px, py := prepareActiveModelFrame(req.pixels, req.zone.w, req.zone.h,
 				scanRegion{0, 0, req.zone.w, req.zone.h}, req.contrast)
 			lastPrepareUS.Store(time.Since(begun).Microseconds())
 			var output []float32

@@ -160,7 +160,7 @@ func benchmarkLoad(path string) ([]byte, int, int, error) {
 func benchmarkPredict(d *Detector, pixels []byte, w, h int, zone scanRegion, threshold float32, contrast bool) ([]Rect, benchmarkTimes, error) {
 	var tm benchmarkTimes
 	begun := time.Now()
-	input, scale, px, py := prepareRegionFrameEnhanced(pixels, w, h, scanRegion{0, 0, w, h}, contrast)
+	input, scale, px, py := prepareActiveModelFrame(pixels, w, h, scanRegion{0, 0, w, h}, contrast)
 	tm.PrepareMS = benchmarkMS(time.Since(begun))
 	if input == nil {
 		return nil, tm, fmt.Errorf("invalid benchmark frame")
