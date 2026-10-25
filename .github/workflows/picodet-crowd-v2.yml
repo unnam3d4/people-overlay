@@ -1,0 +1,152 @@
+name: PicoDet v2 density regression + offline verified Windows build
+
+on:
+  push:
+    branches: [feature/picodet-s320-coverage-v2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  density-test:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install fixture generator (build runner only)
+        run: python -m pip install Pillow==12.1.1
+      - name: Download unmodified published PicoDet x64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 40176361696
+          name: PeopleOverlay_PicoDet_S320_EXPERIMENTAL_Win7_10_x86_x64
+          github-token: ${{ github.token }}
+          path: BUNDLE_PICO
+      - name: Download unmodified published YOLO v3.6.3 binaries
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 40025809468
+          name: PeopleOverlay_v3_6_3_MULTI_MONITOR_OFFLINE_Win7_10_x64_x86
+          github-token: ${{ github.token }}
+          path: BUNDLE_YOLO
+      - name: Extract exact original EXEs without recompilation
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force TEST_EXE | Out-Null
+          Expand-Archive BUNDLE_PICO/PeopleOverlay_PicoDet_S320_EXPERIMENTAL_Offline_Win7_10.zip -DestinationPath EXTRACT_PICO
+          Expand-Archive BUNDLE_YOLO/PeopleOverlay_v3_6_3_MULTI_MONITOR_OFFLINE.zip -DestinationPath EXTRACT_YOLO
+          Copy-Item EXTRACT_PICO/PeopleOverlay_PicoDet_S320_x64.exe TEST_EXE/PicoDet.exe
+          Copy-Item EXTRACT_YOLO/PeopleOverlay_v3_YOLOv8n_x64.exe TEST_EXE/YOLOv8n.exe
+          Get-FileHash TEST_EXE/*.exe -Algorithm SHA256 | Format-Table
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - name: Validate PicoDet unit and scheduler regression tests
+        shell: pwsh
+        working-directory: src
+        run: |
+          $env:CGO_ENABLED='0'
+          $env:GOARCH='amd64'
+          go test -tags "ncnn picodet" ./... -count=1
+          if ($LASTEXITCODE -ne 0) { throw 'PicoDet regression tests failed' }
+          $env:GOARCH='386'
+          go test -tags "ncnn picodet" ./... -count=1
+          if ($LASTEXITCODE -ne 0) { throw 'PicoDet 32-bit unit tests failed' }
+      - name: Cross compile both enhanced EXEs and reuse EXACT model/DLL bytes from validated v1
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED='0'
+          $env:GOOS='windows'
+          foreach ($spec in @(@('amd64','x64'),@('386','x86'))) {
+            $env:GOARCH=$spec[0]
+            $arch=$spec[1]
+            Push-Location src
+            go build -tags "ncnn picodet" -trimpath -ldflags '-s -w -H windowsgui' -o "../updated_$arch.exe" .
+            Pop-Location
+            if ($LASTEXITCODE -ne 0) {throw "Go build PicoDetV2 $arch failed"}
+            python scripts/package_current.py --application "updated_$arch.exe" --donor "EXTRACT_PICO/PeopleOverlay_PicoDet_S320_$arch.exe" --output "TEST_EXE/PicoDetV2_$arch.exe"
+            if ($LASTEXITCODE -ne 0) {throw "Package PicoDetV2 $arch failed"}
+          }
+          Copy-Item TEST_EXE/PicoDetV2_x64.exe TEST_EXE/PicoDetV2.exe
+      - name: Real PicoDet v2 x86 and x64 positive and negative person inference
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force EVIDENCE | Out-Null
+          foreach ($arch in @('x86','x64')) {
+            $exe=(Resolve-Path "TEST_EXE/PicoDetV2_$arch.exe").Path
+            $result=Join-Path (Resolve-Path EVIDENCE).Path "selftest_$arch.json"
+            $process=Start-Process -FilePath $exe -ArgumentList @('--selftest',('"' + $result + '"')) -PassThru -Wait
+            if ($process.ExitCode -ne 0 -or !(Test-Path $result)) {
+              $log=Join-Path $env:LOCALAPPDATA "PeopleOverlay/PeopleOverlay.log"
+              if (Test-Path $log) {Get-Content $log -Tail 40}
+              throw "PicoDetV2 REAL x86/x64 selftest failed"
+            }
+            $report=Get-Content $result -Raw | ConvertFrom-Json
+            if (!$report.passed -or $report.matched_people -ne 3 -or $report.blank_people -ne 0) {
+              throw "PicoDetV2 positive/negative smoke failed $arch"
+            }
+          }
+      - name: Generate 3200x1800 frames with independently known 12 and 48 synthetic person boxes
+        run: python scripts/generate_crowd_ab.py --out FIXTURE
+      - name: Run actual native NCNN with full tracking and scheduler on identical labelled frames
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force RESULTS | Out-Null
+          foreach ($model in @('PicoDet','PicoDetV2','YOLOv8n')) {
+            foreach ($case in @('one_camera_12_people','grid_4x4_48_people')) {
+              Write-Host "RUN $model $case"
+              $exe = (Resolve-Path "TEST_EXE/$model.exe").Path
+              $manifest = (Resolve-Path "FIXTURE/$case.json").Path
+              $report = Join-Path (Resolve-Path RESULTS).Path ("{0}__{1}.json" -f $model, $case)
+              $process = Start-Process -FilePath $exe -ArgumentList @('--benchmark',('"' + $manifest + '"'),('"' + $report + '"')) -Wait -PassThru
+              Write-Host "Exit=$($process.ExitCode) report=$report exists=$(Test-Path $report)"
+              if ($process.ExitCode -ne 0 -or !(Test-Path $report)) {
+                $log = Join-Path $env:LOCALAPPDATA 'PeopleOverlay/PeopleOverlay.log'
+                if (Test-Path $log) {Get-Content $log -Tail 30}
+                throw "$model $case benchmark failed"
+              }
+            }
+          }
+      - name: Score annotated people and timing
+        shell: pwsh
+        run: |
+          python scripts/score_crowd_ab.py RESULTS
+          if ($LASTEXITCODE -ne 0) {throw 'scoring failed'}
+      - name: PicoDet v2 crowd and single-camera A/B safety gate
+        shell: pwsh
+        run: |
+          python scripts/gate_picodet_v2.py RESULTS/SUMMARY.json
+          if ($LASTEXITCODE -ne 0) {throw 'PicoDetV2 regression: keep v1, do not publish'}
+      - name: Build publishable offline zip for Windows 7 SP1/10 x64/x86
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force RELEASE | Out-Null
+          Copy-Item TEST_EXE/PicoDetV2_x64.exe RELEASE/PeopleOverlay_PicoDet_Lite_v2_x64.exe
+          Copy-Item TEST_EXE/PicoDetV2_x86.exe RELEASE/PeopleOverlay_PicoDet_Lite_v2_x86.exe
+          Copy-Item TEST_EXE/PicoDetV2_x64.bundle.json RELEASE/
+          Copy-Item TEST_EXE/PicoDetV2_x86.bundle.json RELEASE/
+          Copy-Item EVIDENCE/*.json RELEASE/
+          Copy-Item README-PICODET.md RELEASE/
+          Copy-Item THIRD_PARTY_NOTICES.txt RELEASE/
+          Compress-Archive -Path RELEASE/* -DestinationPath PeopleOverlay_PicoDet_Lite_v2_Win7_10_Offline.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PeopleOverlay_PicoDet_Lite_v2_Win7_10_x64_x86_OFFLINE_TESTED
+          path: PeopleOverlay_PicoDet_Lite_v2_Win7_10_Offline.zip
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PicoDetV2_vs_PicoDetV1_vs_YOLO_12_48_people
+          path: |
+            RESULTS/
+            FIXTURE/*.json
+            FIXTURE/*.png
+          retention-days: 30
