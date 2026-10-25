@@ -17,6 +17,7 @@ type v3Screen struct {
     regions []scanRegion
     sch scanScheduler
     tracker personTracker
+    direct detectorCache
     alarm alarmGate
     epoch uint64
     profile int32
@@ -110,6 +111,7 @@ func v3CreateScreens(screen uintptr, rects []desktopRect, profile int32, epoch u
         s.sch.reset(len(s.regions),w,h,profile)
         s.tracker.enableConfirmation()
         s.tracker.layout(w,h,v3GridColumns(profile))
+        s.direct.reset(len(s.regions),profile)
         screens=append(screens,s)
     }
     return screens,nil
@@ -118,7 +120,7 @@ func v3CreateScreens(screen uintptr, rects []desktopRect, profile int32, epoch u
 // Rebuild camera regions and tracking only for the screen whose RVi layout
 // changed. Local neural epochs reject obsolete boxes from old layouts.
 func v3SetScreenProfile(s *v3Screen,profile int32,epoch uint64) {
-    if profile<0||profile>3{return}
+    if profile<0||profile>4{return}
     s.profile=profile
     s.epoch=epoch
     s.tracker.reset()
@@ -127,6 +129,7 @@ func v3SetScreenProfile(s *v3Screen,profile int32,epoch uint64) {
     s.regions=regionsForProfile(s.snap.w,s.snap.h,profile)
     s.sch.reset(len(s.regions),s.snap.w,s.snap.h,profile)
     s.completed=make([]time.Time,len(s.regions))
+    s.direct.reset(len(s.regions),profile)
     s.alarm.resetScene()
 }
 
@@ -134,11 +137,18 @@ func v3Publish(screens []*v3Screen, union desktopRect, now time.Time, last *[]Tr
     var views []TrackView
     pending,confirmed,lost:=0,0,0
     for i,s:=range screens {
-        a,b,c:=s.tracker.statusCounts(now)
-        pending+=a
-        confirmed+=b
-        lost+=c
-        for _,v:=range s.tracker.views(now) {
+        var screenViews []TrackView
+        if directDetectionEnabled(s.profile) {
+            screenViews=s.direct.views(now)
+            confirmed+=len(screenViews)
+        } else {
+            a,b,c:=s.tracker.statusCounts(now)
+            pending+=a
+            confirmed+=b
+            lost+=c
+            screenViews=s.tracker.views(now)
+        }
+        for _,v:=range screenViews {
             v.Box=v3RelativeBox(v.Box,s.rect,union)
             // Track IDs are independent per monitor. Encoded ID is display-local,
             // not identity recognition of a person across cameras.
@@ -296,7 +306,7 @@ func v3Analyze(detector *Detector) {
             lastMonitorPoll=now
         }
         configuredProfile:=scanMode.Load()
-        if configuredProfile < -1 || configuredProfile>3 {configuredProfile=3}
+        if configuredProfile < -1 || configuredProfile>4 {configuredProfile=3}
         if !v3SameRects(lastRects,chosen) || generation!=lastGeneration || len(screens)==0 {
             epoch++
             for _,s:=range screens{s.snap.close()}
@@ -339,15 +349,28 @@ func v3Analyze(detector *Detector) {
                 found:=v3KeepCameraDetections(result.detected,idx,s.snap.w,s.snap.h,s.profile)
                 s.sch.markScannedPeople(idx,now,found)
                 s.completed[idx]=now
-                s.tracker.observePeopleFromCapture(found,result.captured,result.pixels,result.zone,result.capturedAt,now)
-                if idx!=0 || len(s.regions)==1 {
-                    tileID:=0
-                    if v3GridColumns(s.profile)>0 {tileID=idx}
-                    s.tracker.noteRegionScanSnapshot(result.zone,now,result.capturedAt,tileID,result.captured)
+                if directDetectionEnabled(s.profile) {
+                    // Detection-only: one recent positive NCNN result is the
+                    // complete authority; zero results remove corners instantly.
+                    alertNew:=s.direct.replace(idx,found,now)
+                    if alertNew && alarmEnabled.Load() &&
+                        (globalAlarmAt.IsZero()||now.Sub(globalAlarmAt)>=time.Duration(alarmPauseSecs.Load())*time.Second) {
+                        globalAlarmAt=now
+                        playAviationAlert(alarmFull.Load())
+                    }
+                } else {
+                    s.tracker.observePeopleFromCapture(found,result.captured,result.pixels,result.zone,result.capturedAt,now)
+                    if idx!=0 || len(s.regions)==1 {
+                        tileID:=0
+                        if v3GridColumns(s.profile)>0 {tileID=idx}
+                        s.tracker.noteRegionScanSnapshot(result.zone,now,result.capturedAt,tileID,result.captured)
+                    }
                 }
                 lastInferenceMS.Store(result.duration.Milliseconds())
                 lastBusy=result.duration
-                s.tracker.maxAIAge=recheckTTL(len(s.regions),s.profile,lastBusy)
+                if !directDetectionEnabled(s.profile) {
+                    s.tracker.maxAIAge=recheckTTL(len(s.regions),s.profile,lastBusy)
+                }
                 nextInfer=now.Add(v3FastAIPause(s.profile,result.duration,v3FullAccuracy.Load(),fastAI.Load()))
             default:
                 drain=false
@@ -375,6 +398,7 @@ func v3Analyze(detector *Detector) {
                 epoch++
                 s.epoch=epoch // reject any AI result from the failed capture
                 s.tracker.reset()
+                s.direct.reset(len(s.regions),profile)
                 s.sch.reset(len(s.regions),w,h,profile)
                 s.completed=make([]time.Time,len(s.regions))
                 s.alarm.resetScene()
@@ -452,6 +476,7 @@ func v3Analyze(detector *Detector) {
             s.epoch=epoch
             s.tracker.reset()
             s.tracker.layout(w,h,v3GridColumns(profile))
+            s.direct.reset(len(s.regions),profile)
             s.alarm.resetScene()
             s.sch.reset(len(s.regions),w,h,profile)
             s.completed=make([]time.Time,len(s.regions))
@@ -460,26 +485,37 @@ func v3Analyze(detector *Detector) {
 
         now=time.Now()
         trackingStart:=time.Now()
-        s.tracker.step(s.snap.pixels,w,h,now)
-        lastTrackingUS.Store(time.Since(trackingStart).Microseconds())
+        if !directDetectionEnabled(profile) {
+            s.tracker.step(s.snap.pixels,w,h,now)
+            lastTrackingUS.Store(time.Since(trackingStart).Microseconds())
+        } else {
+            // Skip the most expensive full-screen optical-flow work.
+            lastTrackingUS.Store(0)
+        }
 
         // A strict screen round-robin prevents an active first monitor from
         // indefinitely starving displays two, three and four.
         if !pending && !now.Before(nextInfer) && slot==nextAI {
-            index:=s.sch.nextAdaptive(now,profile,s.tracker.schedulerViews(now),s.regions)
-            index=s.sch.confirmationRecheck(now,s.tracker.tentativeViews(now),s.regions,index)
-            index=s.sch.ensureFirstCoverage(profile,s.regions,index)
+            index:=0
+            if directDetectionEnabled(profile) {
+                index=s.sch.nextDetector(now)
+            } else {
+                index=s.sch.nextAdaptive(now,profile,s.tracker.schedulerViews(now),s.regions)
+                index=s.sch.confirmationRecheck(now,s.tracker.tentativeViews(now),s.regions,index)
+                index=s.sch.ensureFirstCoverage(profile,s.regions,index)
+            }
             if index>=0 && index<len(s.regions) {
                 region:=s.regions[index]
                 crop:=copyRegionBGRA(s.snap.pixels,w,h,region)
                 if crop!=nil {
-                    captured:=s.tracker.schedulerViews(now)
+                    var captured []TrackView
+                    if !directDetectionEnabled(profile){captured=s.tracker.schedulerViews(now)}
                     select {
                     case req<-inferenceRequest{pixels:crop,contrast:contrastMode.Load(),
                         zone:region,epoch:s.epoch,display:slot,captured:captured,capturedAt:now}:
                         pending=true
                         // Human-readable status encodes physical monitor and zone.
-                        pendingCamera.Store(int32((slot+1)*100+index))
+                        pendingCamera.Store(int32((slot+1)*1000+index))
                         s.sch.markScanned(index,now,false)
                         aiServed[slot]++
                         nextAI=v3SelectNextAI(screens,aiServed,slot)
@@ -489,7 +525,7 @@ func v3Analyze(detector *Detector) {
             }
         }
 
-        if s.alarm.tick(&s.tracker,now,alarmEnabled.Load(),time.Duration(alarmPauseSecs.Load())*time.Second) {
+        if !directDetectionEnabled(profile) && s.alarm.tick(&s.tracker,now,alarmEnabled.Load(),time.Duration(alarmPauseSecs.Load())*time.Second) {
             if globalAlarmAt.IsZero() || now.Sub(globalAlarmAt)>=time.Duration(alarmPauseSecs.Load())*time.Second {
                 globalAlarmAt=now
                 playAviationAlert(alarmFull.Load())
@@ -499,7 +535,14 @@ func v3Analyze(detector *Detector) {
         unseen,worst:=v3CameraCoverage(screens,now)
         v3UnvisitedCameras.Store(int32(unseen))
         v3WorstCameraAgeMS.Store(worst.Milliseconds())
-        cadence:=v3FrameWait(profile,len(screens),len(s.tracker.people)>0,fastAI.Load(),v3FullAccuracy.Load())
+        hasPeople:=len(s.tracker.people)>0
+        if directDetectionEnabled(profile) {hasPeople=s.direct.hasFresh(now)}
+        cadence:=v3FrameWait(profile,len(screens),hasPeople,fastAI.Load(),v3FullAccuracy.Load())
+        // On a dense grid screen capture is far more expensive than NN
+        // inference. Avoid 10 FPS BitBlt at 3000+ px when no tracker is used.
+        if directDetectionEnabled(profile) && profile==4 && len(screens)==1 && cadence<190*time.Millisecond {
+            cadence=190*time.Millisecond
+        }
         if elapsed:=time.Since(start);elapsed<cadence{time.Sleep(cadence-elapsed)}
     }
 }

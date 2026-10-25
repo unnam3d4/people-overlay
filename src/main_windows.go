@@ -595,7 +595,8 @@ func main() {
     hwnd := overlays.first()
 	enabled.Store(true)
 	colour.Store(1)
-	scanMode.Store(-1) // auto: precise fullscreen first, grid only after confirming boundaries
+	scanMode.Store(-1) // auto recognises fullscreen / 2x2 / 3x3 / 4x4
+    detectorOnly.Store(picoDetectorCapable) // lighter default for PicoDet
     v3FullAccuracy.Store(true) // validated on real PETS2009; can be disabled on weak CPUs
 	sensitivity.Store(2)
 	alarmEnabled.Store(true)

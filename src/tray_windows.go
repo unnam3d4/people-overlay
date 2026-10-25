@@ -26,6 +26,11 @@ const (
 	menuIDProfileBalanced = 111
 	menuIDProfileCCTV     = 112
     menuIDProfileAuto     = 113
+    menuIDProfileCustom   = 114
+    menuIDDirectDetector  = 115
+    menuIDTrackedDetector = 116
+    menuIDColumnsStart    = 300 // 300..311, one to 12
+    menuIDRowsStart       = 320 // 320..331, one to 12
 	menuIDSensLow         = 120
 	menuIDSensNormal      = 121
 	menuIDSensHigh        = 122
@@ -298,6 +303,26 @@ func (t *appTray) popupMenu() {
 	appendMenu(menu, menuIDProfileEco, "Режим: экономный (2×2)", scanMode.Load() == 1)
 	appendMenu(menu, menuIDProfileBalanced, "Режим: сбалансированный (3×3)", scanMode.Load() == 2)
 	appendMenu(menu, menuIDProfileCCTV, "Режим: видеонаблюдение (4×4)", scanMode.Load() == 3)
+    columns,rows:=manualGridDimensions()
+    appendMenu(menu,menuIDProfileCustom,fmt.Sprintf("Сетка вручную: %d×%d (%d камер на экран)",columns,rows,columns*rows),scanMode.Load()==4)
+    if picoDetectorCapable {
+        // Native child menus, don't show a scrolling 24-item flat list.
+        colsMenu,_,_:=trayCreateMenu.Call()
+        rowsMenu,_,_:=trayCreateMenu.Call()
+        if colsMenu!=0 && rowsMenu!=0 {
+            for i:=1;i<=maxCustomGridAxis;i++ {
+                appendMenu(colsMenu,menuIDColumnsStart+uintptr(i-1),fmt.Sprintf("%d",i),columns==i)
+                appendMenu(rowsMenu,menuIDRowsStart+uintptr(i-1),fmt.Sprintf("%d",i),rows==i)
+            }
+            colLabel:=syscall.StringToUTF16Ptr("Столбцы сетки (1–12)")
+            rowLabel:=syscall.StringToUTF16Ptr("Строки сетки (1–12)")
+            trayAppendMenu.Call(menu,menuString|0x10,colsMenu,uintptr(unsafe.Pointer(colLabel)))
+            trayAppendMenu.Call(menu,menuString|0x10,rowsMenu,uintptr(unsafe.Pointer(rowLabel)))
+        }
+        separator(menu)
+        appendMenu(menu,menuIDDirectDetector,"Обнаружение: короткие уголки, без слежения",detectorOnly.Load())
+        appendMenu(menu,menuIDTrackedDetector,"Сопровождение: уголки за человеком",!detectorOnly.Load())
+    }
     separator(menu)
     // v3 always scans up to four physical monitors. These radio commands
     // choose ONLY the target for local screenshot/capture diagnostics.
@@ -395,6 +420,20 @@ func (t *appTray) popupMenu() {
 	}
 }
 func (t *appTray) action(id uintptr) {
+    if picoDetectorCapable && id>=menuIDColumnsStart && id<menuIDColumnsStart+maxCustomGridAxis{
+        customGridColumns.Store(int32(id-menuIDColumnsStart+1))
+        scanMode.Store(4)
+        configurationGeneration.Add(1)
+        version.Add(1)
+        return
+    }
+    if picoDetectorCapable && id>=menuIDRowsStart && id<menuIDRowsStart+maxCustomGridAxis{
+        customGridRows.Store(int32(id-menuIDRowsStart+1))
+        scanMode.Store(4)
+        configurationGeneration.Add(1)
+        version.Add(1)
+        return
+    }
     if id>=menuIDMonitorStart && id<menuIDMonitorStart+4 {
         index:=int32(id-menuIDMonitorStart)
         if index < int32(len(monitorList())) && displaySelection.Load()!=index {
@@ -410,6 +449,7 @@ func (t *appTray) action(id uintptr) {
 	defer func() {
 		switch id {
 		case menuIDToggle, menuIDProfileAuto, menuIDProfileSingle, menuIDProfileEco, menuIDProfileBalanced, menuIDProfileCCTV,
+            menuIDProfileCustom, menuIDDirectDetector, menuIDTrackedDetector,
 			menuIDSensLow, menuIDSensNormal, menuIDSensHigh, menuIDContrast, menuIDCaptureCompat, menuIDFastAI, menuIDTest:
 			configurationGeneration.Add(1)
 		}
@@ -418,6 +458,14 @@ func (t *appTray) action(id uintptr) {
 	case menuIDToggle:
 		enabled.Store(!enabled.Load())
 		version.Add(1)
+    case menuIDDirectDetector:
+        detectorOnly.Store(true)
+        version.Add(1)
+    case menuIDTrackedDetector:
+        detectorOnly.Store(false)
+        version.Add(1)
+    case menuIDProfileCustom:
+        if picoDetectorCapable {scanMode.Store(4);version.Add(1)}
 	case menuIDProfileAuto:
         scanMode.Store(-1)
         version.Add(1)
