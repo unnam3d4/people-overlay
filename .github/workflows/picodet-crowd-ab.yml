@@ -54,7 +54,7 @@ jobs:
               Write-Host "RUN $model $case"
               $exe = (Resolve-Path "TEST_EXE/$model.exe").Path
               $manifest = (Resolve-Path "FIXTURE/$case.json").Path
-              $report = Join-Path (Resolve-Path RESULTS).Path "$model" + "__" + "$case" + ".json"
+              $report = Join-Path (Resolve-Path RESULTS).Path ("{0}__{1}.json" -f $model, $case)
               & $exe --benchmark $manifest $report
               if ($LASTEXITCODE -ne 0 -or !(Test-Path $report)) {
                 $log = Join-Path $env:LOCALAPPDATA 'PeopleOverlay/PeopleOverlay.log'
