@@ -1,0 +1,129 @@
+name: PicoDet Lite v3 visual-verified CCTV crowd acceptance + Win7 offline release
+
+on:
+  push:
+    branches: [feature/picodet-visual-verified-v3]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  qa-and-build:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download only previously VERIFIED PicoDet v2 offline package
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 40182038831
+          name: PeopleOverlay_PicoDet_Lite_v2_Win7_10_x64_x86_OFFLINE_TESTED
+          github-token: ${{ github.token }}
+          path: BUNDLE_V2
+      - name: Extract immutable v2 baseline and confirmed PicoDet weights
+        shell: pwsh
+        run: |
+          Expand-Archive BUNDLE_V2/PeopleOverlay_PicoDet_Lite_v2_Win7_10_Offline.zip -DestinationPath BASELINE
+          New-Item -ItemType Directory -Force TEST_EXE | Out-Null
+          Copy-Item BASELINE/PeopleOverlay_PicoDet_Lite_v2_x64.exe TEST_EXE/PicoDetV2.exe
+          Get-FileHash TEST_EXE/PicoDetV2.exe
+      - name: Run complete PicoDet regression tests on Windows x86 AND x64
+        shell: pwsh
+        working-directory: src
+        run: |
+          $env:CGO_ENABLED='0'
+          foreach ($arch in @('amd64','386')) {
+            $env:GOARCH=$arch
+            go test -tags "ncnn picodet" ./... -count=1
+            if ($LASTEXITCODE -ne 0) {throw "PicoDet v3 unit tests failed: $arch"}
+          }
+      - name: Build PicoDet v3 x64/x86 with existing NCNN model+DLL (no re-export)
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED='0'
+          $env:GOOS='windows'
+          foreach ($arch in @('x64','x86')) {
+            if ($arch -eq 'x64') {$env:GOARCH='amd64'} else {$env:GOARCH='386'}
+            Push-Location src
+            go build -tags "ncnn picodet" -trimpath -ldflags '-s -w -H windowsgui' -o "../fresh_$arch.exe" .
+            Pop-Location
+            if ($LASTEXITCODE -ne 0) {throw "Go build failed $arch"}
+            python scripts/package_current.py --application "fresh_$arch.exe" --donor "BASELINE/PeopleOverlay_PicoDet_Lite_v2_$arch.exe" --output "TEST_EXE/PicoDetV3_$arch.exe"
+            if ($LASTEXITCODE -ne 0) {throw "pack failed $arch"}
+          }
+          Copy-Item TEST_EXE/PicoDetV3_x64.exe TEST_EXE/PicoDetV3.exe
+      - name: Check real person-image and empty-image selftest x86/x64
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force EVIDENCE | Out-Null
+          foreach ($arch in @('x64','x86')) {
+            $exe=(Resolve-Path "TEST_EXE/PicoDetV3_$arch.exe").Path
+            $report=Join-Path (Resolve-Path EVIDENCE).Path "PicoDetV3-$arch-selftest.json"
+            $p=Start-Process -FilePath $exe -ArgumentList @('--selftest',('"' + $report + '"')) -Wait -PassThru
+            if ($p.ExitCode -ne 0 -or !(Test-Path $report)) {
+              $log=Join-Path $env:LOCALAPPDATA 'PeopleOverlay/PeopleOverlay.log'
+              if (Test-Path $log) {Get-Content $log -Tail 40}
+              throw "PicoDet v3 positive/negative selftest failed $arch"
+            }
+            $result=Get-Content $report -Raw | ConvertFrom-Json
+            if (!$result.passed -or $result.matched_people -ne 3 -or $result.blank_people -ne 0) {
+              throw "PicoDet v3 person recall regression $arch"
+            }
+          }
+      - name: Install fixture generator only on CI test machine
+        run: python -m pip install Pillow==12.1.1
+      - name: Create 3200x1800 labelled 12 and 48 human synthetic photo composites
+        run: python scripts/generate_crowd_ab.py --out FIXTURE
+      - name: Benchmark both original published v2 and v3 under same host on same pixels
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force RESULTS | Out-Null
+          foreach ($model in @('PicoDetV2','PicoDetV3')) {
+            foreach ($scenario in @('one_camera_12_people','grid_4x4_48_people')) {
+              $exe=(Resolve-Path "TEST_EXE/$model.exe").Path
+              $manifest=(Resolve-Path "FIXTURE/$scenario.json").Path
+              $report=Join-Path (Resolve-Path RESULTS).Path ("{0}__{1}.json" -f $model,$scenario)
+              $p=Start-Process -FilePath $exe -ArgumentList @('--benchmark',('"' + $manifest + '"'),('"' + $report + '"')) -Wait -PassThru
+              if ($p.ExitCode -ne 0 -or !(Test-Path $report)) {throw "PicoDet v3 comparison failed: $model $scenario"}
+            }
+          }
+      - name: Score persons vs manually derived boxes
+        run: python scripts/score_crowd_ab.py RESULTS
+      - name: Always save comparison data including regression failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PicoDet_Lite_v3_12_and_48_people_comparison
+          path: |
+            RESULTS/
+            EVIDENCE/
+            FIXTURE/*.json
+          retention-days: 30
+      - name: Only publish if v3 passes detection/no-ghost quality gate
+        run: python scripts/gate_picodet_v3.py RESULTS/SUMMARY.json
+      - name: Zip both standalone x64/x86 Windows 7/10 applications
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force RELEASE | Out-Null
+          Copy-Item TEST_EXE/PicoDetV3_x64.exe RELEASE/PeopleOverlay_PicoDet_Lite_v3_x64.exe
+          Copy-Item TEST_EXE/PicoDetV3_x86.exe RELEASE/PeopleOverlay_PicoDet_Lite_v3_x86.exe
+          Copy-Item TEST_EXE/*.bundle.json RELEASE/
+          Copy-Item EVIDENCE/*.json RELEASE/
+          Copy-Item README-PICODET.md RELEASE/
+          Copy-Item THIRD_PARTY_NOTICES.txt RELEASE/
+          Compress-Archive -Path RELEASE/* -DestinationPath PeopleOverlay_PicoDet_Lite_v3_Win7_10_OFFLINE.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PeopleOverlay_PicoDet_Lite_v3_Win7_10_x86_x64_OFFLINE_TESTED
+          path: PeopleOverlay_PicoDet_Lite_v3_Win7_10_OFFLINE.zip
+          retention-days: 30
+          if-no-files-found: error

@@ -61,7 +61,7 @@ def main():
     a=p.parse_args();rows=[]
     for f in sorted(a.results.glob('*.json')):
         if '__' in f.stem:rows.append(evaluate(f))
-    if len(rows)!=6:raise RuntimeError(f'expected 6 reports got {len(rows)}')
+    if len(rows)!=4:raise RuntimeError(f'expected 4 reports got {len(rows)}')
     dest=a.results/'SUMMARY.json';dest.write_text(json.dumps(rows,indent=2),encoding="utf-8")
     print(json.dumps(rows,indent=2))
 if __name__=='__main__':main()
