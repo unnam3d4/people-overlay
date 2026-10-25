@@ -825,6 +825,19 @@ func (t *personTracker) drawableTrack(p personTrack, now time.Time) bool {
     // 4x4 real-world CPU round trips last 1.2-2s. Prevent all tracks from
     // blinking on those measured revisits while bounding stale marker life.
     if aiAge<=2600*time.Millisecond{return true}
+    // PicoDet is small enough to scan many more CCTV tiles but still uses
+    // ONE serial neural worker shared by all screens. When 16+ crowded tiles
+    // are revisited, 2.6 seconds may elapse before another AI observation.
+    // Extend corner visibility ONLY for a recent, visually re-verified,
+    // AI-anchored person. Changed textures, missing anchors, lost tracks and
+    // explicit negative scans never qualify; hard expiry prevents ghosts.
+    // This does not increase CPU AI checks, and YOLO keeps its old policy.
+    if picoVisualRevalidation && t.columns==4 &&
+        aiAge<=4200*time.Millisecond &&
+        p.AnchorValid && !p.LastVisual.IsZero() &&
+        !p.LastVisual.After(now) && now.Sub(p.LastVisual)<=350*time.Millisecond {
+        return true
+    }
     // A delayed inference (e.g. 4s) is useful only if its original captured
     // human texture was matched against the current live pixels on delivery.
     // It gets a very short paint allowance; ordinary stationary background

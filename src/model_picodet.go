@@ -82,3 +82,6 @@ func decodeActiveModel(out []float32, n, fullW, fullH int, scale, padX, padY flo
 	}
 	return suppressRects(candidates, .45, 80)
 }
+
+// Allow a bounded extension only while the screen texture is re-verified.
+const picoVisualRevalidation = true

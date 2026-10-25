@@ -17,3 +17,5 @@ func prepareActiveModelFrame(src []byte, w,h int, reg scanRegion, enhance bool)(
 // Preserve historical v3.6.3 behavior for all YOLO / default builds.
 const picoCoverageBurst = false
 const modelMaxTrackedPeople = 48
+
+const picoVisualRevalidation = false
