@@ -1,0 +1,138 @@
+name: PicoDet-S NCNN CPU experimental Windows 7/10 offline build
+
+on:
+  push:
+    branches: [feature/picodet-s-lite]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: picodet-ncnn-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - name: Check PicoDet-specific Go unit tests x64/x86
+        shell: pwsh
+        working-directory: src
+        run: |
+          $env:CGO_ENABLED='0'
+          foreach ($arch in @('amd64','386')) {
+            $env:GOARCH=$arch
+            go test -tags "ncnn picodet" -run 'TestPicoDet|TestInferenceReply|TestMultiOverlay' ./... -count=1
+            if ($LASTEXITCODE -ne 0) { throw "PicoDet $arch regression failed" }
+            go build -tags "ncnn picodet" -o "../picodet_$arch.exe" .
+            if ($LASTEXITCODE -ne 0) { throw "PicoDet $arch compile failed" }
+          }
+
+  native:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install legacy Windows cross compilers
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build g++-mingw-w64-x86-64 g++-mingw-w64-i686 mingw-w64-tools
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - name: Download OFFICIAL PicoDet-S 320 preconverted NCNN weights (build machine only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _ncnn_model
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 20 --max-time 240 \
+            -o _ncnn_model/model.param \
+            https://paddledet.bj.bcebos.com/deploy/third_engine/picodet_s_320_coco_lcnet-opt.param
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 20 --max-time 240 \
+            -o _ncnn_model/model.bin \
+            https://paddledet.bj.bcebos.com/deploy/third_engine/picodet_s_320_coco_lcnet-opt.bin
+          test "$(wc -c < _ncnn_model/model.param)" -gt 1000
+          test "$(wc -c < _ncnn_model/model.bin)" -gt 100000
+          grep -q 'transpose_0.tmp_0' _ncnn_model/model.param
+          grep -q 'transpose_7.tmp_0' _ncnn_model/model.param
+          sha256sum _ncnn_model/model.param _ncnn_model/model.bin
+      - name: Build standalone Win7 x86/x64 PicoDet NCNN bridges without OpenMP/Vulkan
+        shell: bash
+        run: |
+          BRIDGE_SOURCE="$PWD/native/bridge_picodet.cpp" bash scripts/build_ncnn.sh
+      - name: Build Go application PicoDet engine and embed model into each Windows executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p DIST
+          for spec in 'amd64 x64' '386 x86'; do
+            read -r goarch arch <<< "$spec"
+            (cd src && CGO_ENABLED=0 GOOS=windows GOARCH="$goarch" go build -tags 'ncnn picodet' -trimpath -ldflags '-s -w -H windowsgui' -o "../_output/$arch/PeopleOverlay_PicoDet_S320_$arch.exe" .)
+            python scripts/pack_picodet.py \
+              --app "_output/$arch/PeopleOverlay_PicoDet_S320_$arch.exe" \
+              --param _ncnn_model/model.param --weights _ncnn_model/model.bin \
+              --dll "_output/$arch/ncnnbridge.dll" \
+              --dest "DIST/PeopleOverlay_PicoDet_S320_$arch.exe"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: picodet-internal-UNVERIFIED
+          path: DIST
+          retention-days: 3
+
+  real-inference:
+    needs: [compile,native]
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: picodet-internal-UNVERIFIED
+          path: DIST
+      - name: Validate packed PicoDet native inference and blank control on BOTH architectures
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force EVIDENCE | Out-Null
+          foreach ($arch in @('x64','x86')) {
+            $exe = (Resolve-Path "DIST/PeopleOverlay_PicoDet_S320_$arch.exe").Path
+            $report = Join-Path (Resolve-Path EVIDENCE).Path "PicoDet-S320-$arch.json"
+            $process = Start-Process -FilePath $exe -ArgumentList @('--selftest',('"' + $report + '"')) -Wait -PassThru
+            if ($process.ExitCode -ne 0 -or !(Test-Path $report)) {
+              $log = Join-Path $env:LOCALAPPDATA 'PeopleOverlay/PeopleOverlay.log'
+              if (Test-Path $log) { Get-Content $log -Tail 20 }
+              throw "REAL PicoDet $arch positive+blank selftest FAILED"
+            }
+            $result = Get-Content $report -Raw | ConvertFrom-Json
+            if (!$result.passed -or $result.matched_people -lt 1 -or $result.blank_people -ne 0) {
+              throw "PicoDet $arch person recognition or blank test failed"
+            }
+          }
+      - name: Publish separate clearly experimental PicoDet package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force RELEASE | Out-Null
+          Copy-Item DIST/PeopleOverlay_PicoDet_S320_*.exe RELEASE
+          Copy-Item DIST/PeopleOverlay_PicoDet_S320_*.json RELEASE
+          Copy-Item README-PICODET.md RELEASE
+          Copy-Item THIRD_PARTY_NOTICES.txt RELEASE
+          Compress-Archive -Path RELEASE/* -DestinationPath PeopleOverlay_PicoDet_S320_EXPERIMENTAL_Offline_Win7_10.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PeopleOverlay_PicoDet_S320_EXPERIMENTAL_Win7_10_x86_x64
+          path: PeopleOverlay_PicoDet_S320_EXPERIMENTAL_Offline_Win7_10.zip
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PicoDet_person_detection_evidence
+          path: EVIDENCE
+          retention-days: 30
