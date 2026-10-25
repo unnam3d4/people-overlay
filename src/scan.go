@@ -24,17 +24,18 @@ func regionsForProfile(w,h int,profile int32)[]scanRegion{
  // A camera expanded to full screen must not be chopped into 16 AI
  // crops: that splits the human silhouette and defeats detection.
  if profile==0{return []scanRegion{{0,0,w,h}}}
- grid:=3
- if profile==1{grid=2}
- if profile==3{grid=4}
- regs:=make([]scanRegion,0,grid*grid+1)
+ cols,rows:=3,3
+ if profile==1{cols,rows=2,2}
+ if profile==3{cols,rows=4,4}
+ if profile==4{cols,rows=manualGridDimensions()}
+ regs:=make([]scanRegion,0,cols*rows+1)
  regs=append(regs,scanRegion{0,0,w,h})
- for row:=0;row<grid;row++{
-  y1:=row*h/grid
-  y2:=(row+1)*h/grid
-  for col:=0;col<grid;col++{
-   x1:=col*w/grid
-   x2:=(col+1)*w/grid
+ for row:=0;row<rows;row++{
+  y1:=row*h/rows
+  y2:=(row+1)*h/rows
+  for col:=0;col<cols;col++{
+   x1:=col*w/cols
+   x2:=(col+1)*w/cols
    padX:=maxScan(8,(x2-x1)*12/100)
    padY:=maxScan(8,(y2-y1)*12/100)
    x1=maxScan(0,x1-padX);y1=maxScan(0,y1-padY)

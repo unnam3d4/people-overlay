@@ -85,3 +85,5 @@ func decodeActiveModel(out []float32, n, fullW, fullH int, scale, padX, padY flo
 
 // Allow a bounded extension only while the screen texture is re-verified.
 const picoVisualRevalidation = true
+
+const picoDetectorCapable = true

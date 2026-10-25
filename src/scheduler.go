@@ -43,7 +43,7 @@ func (s *scanScheduler) reset(regions int, w, h int, profile int32) {
 	s.firstDecision = time.Time{}
     s.decisionCount = 0
     s.coverageDecision = 0
-	if profile == 3 {
+	if profile == 3 || profile == 4 {
 		s.lastFull = time.Now()
 	}
 }
@@ -497,6 +497,9 @@ func throttleFor(profile int32, busy time.Duration) time.Duration {
 		factor, minimum, maximum = 1.7, 240*time.Millisecond, 3*time.Second
 	case 3:
 		factor, minimum, maximum = .07, 50*time.Millisecond, 400*time.Millisecond
+	case 4:
+		// 144 dense 320px crops can still saturate CPU; enforce rest time.
+		factor, minimum, maximum = .22, 90*time.Millisecond, 500*time.Millisecond
 	default:
 		factor, minimum, maximum = .55, 140*time.Millisecond, 1500*time.Millisecond
 	}

@@ -27,8 +27,22 @@ func v3OwnerTile(box Rect, w,h,columns int) int {
 // The region index is 1..N² in row-major order. Full-frame AI pass (0)
 // may legitimately see people in all feeds, and must never be filtered.
 func v3KeepCameraDetections(boxes []Rect, regionIdx int, w,h int,profile int32) []Rect {
+    if regionIdx==0 {return boxes}
+    if profile==4 {
+        cols,rows:=manualGridDimensions()
+        filtered:=make([]Rect,0,len(boxes))
+        for _,box:=range boxes {
+            if box.W<=0||box.H<=0 {continue}
+            cx:=int((box.X+box.W*.5)*float64(cols)/float64(w))
+            cy:=int((box.Y+box.H*.5)*float64(rows)/float64(h))
+            if cx>=0&&cx<cols&&cy>=0&&cy<rows&&cy*cols+cx+1==regionIdx {
+                filtered=append(filtered,box)
+            }
+        }
+        return filtered
+    }
     columns:=v3GridColumns(profile)
-    if columns==0 || regionIdx==0 {return boxes}
+    if columns==0 {return boxes}
     filtered:=make([]Rect,0,len(boxes))
     for _,box:=range boxes {
         if v3OwnerTile(box,w,h,columns)==regionIdx {

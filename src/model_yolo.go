@@ -19,3 +19,5 @@ const picoCoverageBurst = false
 const modelMaxTrackedPeople = 48
 
 const picoVisualRevalidation = false
+
+const picoDetectorCapable = false
