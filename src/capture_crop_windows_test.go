@@ -44,3 +44,21 @@ func TestV4ROIStaysWithinAnyMonitor(t *testing.T){
         if len(sample)!=r.w*r.h*4 {t.Fatalf("ROI %d read wrong row stride",i)}
     }
 }
+
+func TestV4RegionOnlyReducesGDITransferBytes(t *testing.T) {
+    for _,tc:=range []struct{c,r int}{{4,4},{6,4},{10,5},{12,8}}{
+        customGridColumns.Store(int32(tc.c))
+        customGridRows.Store(int32(tc.r))
+        profile:=int32(4)
+        if tc.c==4&&tc.r==4{profile=3}
+        regions:=regionsForProfile(3200,1800,profile)
+        fullPixels:=int64(3200*1800)
+        var total int64
+        for _,roi:=range regions[1:] {total+=int64(roi.w*roi.h)}
+        if total<=0||len(regions)<2 {t.Fatal("missing camera regions")}
+        avg:=total/int64(len(regions)-1)
+        if avg>=fullPixels/3 {t.Fatalf("%dx%d ROI too large: avg %d of %d",tc.c,tc.r,avg,fullPixels)}
+    }
+    customGridColumns.Store(4)
+    customGridRows.Store(4)
+}
