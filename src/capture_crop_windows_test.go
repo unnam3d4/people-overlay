@@ -62,3 +62,45 @@ func TestV4RegionOnlyReducesGDITransferBytes(t *testing.T) {
     customGridColumns.Store(4)
     customGridRows.Store(4)
 }
+
+func TestV4RealGDIRegionCopyDoesNotTouchAdjacentPixels(t *testing.T){
+    screen,_,_:=pDC.Call(0)
+    if screen==0{t.Skip("headless Windows runner has no screen DC")}
+    defer pReleaseDC.Call(0,screen)
+    const width,height=60,45
+    src,err:=newDIB(screen,width,height)
+    if err!=nil{t.Fatalf("source DIB failed: %v",err)}
+    defer src.close()
+    dst,err:=newDIB(screen,width,height)
+    if err!=nil{t.Fatalf("destination DIB failed: %v",err)}
+    defer dst.close()
+    for y:=0;y<height;y++{for x:=0;x<width;x++{
+        i:=4*(y*width+x)
+        src.pixels[i]=byte(x*3+1)
+        src.pixels[i+1]=byte(y*4+2)
+        src.pixels[i+2]=byte((x+y)*2+3)
+        src.pixels[i+3]=255
+        dst.pixels[i]=0x5b
+        dst.pixels[i+1]=0x5b
+        dst.pixels[i+2]=0x5b
+        dst.pixels[i+3]=255
+    }}
+    pGdiFlush.Call()
+    const left,top,cw,ch=12,7,22,19
+    ok,_,_:=pBlt.Call(dst.dc,left,top,cw,ch,src.dc,left,top,srcCopy)
+    if ok==0{t.Fatal("GDI cropped BitBlt failed")}
+    pGdiFlush.Call()
+    snapshot:=copyRegionBGRA(dst.pixels,width,height,scanRegion{left,top,cw,ch})
+    if len(snapshot)!=cw*ch*4{t.Fatal("wrong slice size")}
+    for y:=0;y<height;y++{for x:=0;x<width;x++{
+        i:=4*(y*width+x)
+        inside:=x>=left&&x<left+cw&&y>=top&&y<top+ch
+        for c:=0;c<3;c++{
+            expected:=byte(0x5b)
+            if inside{expected=src.pixels[i+c]}
+            if dst.pixels[i+c]!=expected{
+                t.Fatalf("cropped GDI pixel changed at %d,%d c%d: %d wanted %d",x,y,c,dst.pixels[i+c],expected)
+            }
+        }
+    }}
+}

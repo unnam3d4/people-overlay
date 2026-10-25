@@ -87,6 +87,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: PeopleOverlay_PicoDet_v4_CroppedCapture_OFFLINE_x64_x86
-          path: PeopleOverlay_PicoDet_FlexGrid_DetectorOnly_Win7_10.zip
+          path: PeopleOverlay_PicoDet_v4_CroppedCapture_Offline_Win7_10.zip
           retention-days: 30
           if-no-files-found: error
