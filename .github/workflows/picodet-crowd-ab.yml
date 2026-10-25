@@ -55,8 +55,9 @@ jobs:
               $exe = (Resolve-Path "TEST_EXE/$model.exe").Path
               $manifest = (Resolve-Path "FIXTURE/$case.json").Path
               $report = Join-Path (Resolve-Path RESULTS).Path ("{0}__{1}.json" -f $model, $case)
-              & $exe --benchmark $manifest $report
-              if ($LASTEXITCODE -ne 0 -or !(Test-Path $report)) {
+              $process = Start-Process -FilePath $exe -ArgumentList @('--benchmark',('"' + $manifest + '"'),('"' + $report + '"')) -Wait -PassThru
+              Write-Host "Exit=$($process.ExitCode) report=$report exists=$(Test-Path $report)"
+              if ($process.ExitCode -ne 0 -or !(Test-Path $report)) {
                 $log = Join-Path $env:LOCALAPPDATA 'PeopleOverlay/PeopleOverlay.log'
                 if (Test-Path $log) {Get-Content $log -Tail 30}
                 throw "$model $case benchmark failed"
