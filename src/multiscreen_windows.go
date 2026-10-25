@@ -384,6 +384,76 @@ func v3Analyze(detector *Detector) {
         profile:=s.profile
         w,h:=s.snap.w,s.snap.h
         start:=time.Now()
+        // Direct person detection needs ONLY the next camera crop, not a
+        // full 3000px BitBlt of every desktop at 5-10 FPS. The DIB remains
+        // monitor-sized to preserve exact overlay/negative-origin geometry;
+        // BitBlt writes only the selected rectangular slice in its usual
+        // coordinates and copyRegionBGRA reads exactly those pixels.
+        // Preserve periodic FULL captures for automatic layout detection and
+        // on-demand diagnostics. Never take this fast path in tracking mode.
+        diagnosticSlot:=int(displaySelection.Load())
+        diagnosticRequest:=slot==diagnosticSlot &&
+            (captureRequested.Load()||captureProbeRequested.Load()||!probeAt.IsZero())
+        if v4CanCropDirect(profile,configuredProfile,now.Sub(s.layoutAt),diagnosticRequest) {
+            if !pending && !now.Before(nextInfer) && slot==nextAI {
+                index:=s.sch.nextDetector(now)
+                if index>=0&&index<len(s.regions) {
+                    region:=s.regions[index]
+                    flags:=uintptr(srcCopy)
+                    if captureCompat.Load(){flags|=0x40000000}
+                    ok,_,_:=pBlt.Call(
+                        s.snap.dc,uintptr(region.x),uintptr(region.y),
+                        uintptr(region.w),uintptr(region.h),screen,
+                        uintptr(int64(s.rect.Left)+int64(region.x)),
+                        uintptr(int64(s.rect.Top)+int64(region.y)),flags)
+                    if ok==0 {
+                        s.captureFailures++
+                        if s.captureFailures==3 {
+                            // The display's video may have disappeared:
+                            // revoke stale boxes and invalidate in-flight AI.
+                            epoch++
+                            s.epoch=epoch
+                            s.direct.reset(len(s.regions),profile)
+                            s.sch.reset(len(s.regions),w,h,profile)
+                            s.completed=make([]time.Time,len(s.regions))
+                            v3Publish(screens,union,time.Now(),&lastPublished)
+                        }
+                        if s.captureFailures==1||s.captureFailures%20==0 {
+                            logError(fmt.Errorf("v4 monitor %d cropped BitBlt failed (%d)",
+                                slot+1,s.captureFailures))
+                        }
+                        nextAI=v3SelectNextAI(screens,aiServed,slot)
+                    } else {
+                        s.captureFailures=0
+                        pGdiFlush.Call()
+                        lastCaptureUS.Store(time.Since(start).Microseconds())
+                        crop:=copyRegionBGRA(s.snap.pixels,w,h,region)
+                        if crop!=nil {
+                            select {
+                            case req<-inferenceRequest{
+                                pixels:crop,contrast:contrastMode.Load(),zone:region,
+                                epoch:s.epoch,display:slot,capturedAt:now}:
+                                pending=true
+                                pendingCamera.Store(int32((slot+1)*1000+index))
+                                s.sch.markScanned(index,now,false)
+                                aiServed[slot]++
+                                nextAI=v3SelectNextAI(screens,aiServed,slot)
+                            default:
+                            }
+                        }
+                    }
+                }
+            }
+            // No tracked visual motion, no stale fullscreen image processing,
+            // no arbitrary snapshot. The overlay is still cleared at TTL.
+            lastTrackingUS.Store(0)
+            v3Publish(screens,union,time.Now(),&lastPublished)
+            unseen,worst:=v3CameraCoverage(screens,time.Now())
+            v3UnvisitedCameras.Store(int32(unseen))
+            v3WorstCameraAgeMS.Store(worst.Milliseconds())
+            time.Sleep(65*time.Millisecond)
+            continue
+        }
         flags:=uintptr(srcCopy)
         if captureCompat.Load(){flags|=0x40000000}
         ok,_,_:=pBlt.Call(s.snap.dc,0,0,uintptr(w),uintptr(h),screen,
