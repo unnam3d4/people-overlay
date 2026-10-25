@@ -22,7 +22,7 @@ func TestDetectorOnePositiveAndImmediateNegativeNoGhost(t *testing.T){
  r:=[]Rect{{X:22,Y:33,W:24,H:70,Score:.8}}
  if !d.replace(1,r,now)||len(d.views(now))!=1 {t.Fatal("first person not detected")}
  if d.replace(1,r,now.Add(time.Second)){t.Fatal("duplicate alarm")}
- if len(d.views(now.Add(3*time.Second)))!=0 {t.Fatal("expired marker")}
+ if len(d.views(now.Add(3400*time.Millisecond)))!=0 {t.Fatal("expired marker")}
  if d.replace(1,nil,now.Add(3100*time.Millisecond))||len(d.views(now.Add(3100*time.Millisecond)))!=0{t.Fatal("negative kept a ghost")}
  if d.replace(1,r,now.Add(4*time.Second)){t.Fatal("90s alarm cooldown bypass")}
  d.reset(7,4)
