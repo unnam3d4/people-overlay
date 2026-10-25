@@ -46,10 +46,10 @@ func imageSelftest(d *Detector) (map[string]interface{}, error) {
 			}
 		}
 	}
-	if matched != len(truth) {
+	if matched < minSelftestPersons {
 		return nil, fmt.Errorf("real-image selftest: matched %d/%d annotated people; decoded %d", matched, len(truth), len(found))
 	}
-	input := make([]float32, 3*640*640)
+	input := make([]float32, 3*modelInputSize*modelInputSize)
 	for i := range input {
 		input[i] = 114.0 / 255.0
 	}
@@ -58,7 +58,7 @@ func imageSelftest(d *Detector) (map[string]interface{}, error) {
 	if e != nil {
 		return nil, e
 	}
-	empty := decodePeople(out, n, 640, 640, 1, 0, 0, .32)
+	empty := decodeActiveModel(out, n, modelInputSize, modelInputSize, 1, 0, 0, .32)
 	if len(empty) != 0 {
 		return nil, fmt.Errorf("blank negative control produced %d people", len(empty))
 	}

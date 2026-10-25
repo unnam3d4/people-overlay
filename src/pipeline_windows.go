@@ -82,7 +82,7 @@ func inferenceWorkerUntil(detector *Detector, requests <-chan inferenceRequest, 
 			decodeStart := time.Now()
 			var found []Rect
 			if err == nil {
-				found = decodePeople(output, n, req.zone.w, req.zone.h, scale, px, py, confidenceThreshold(sensitivity.Load()))
+				found = decodeActiveModel(output, n, req.zone.w, req.zone.h, scale, px, py, confidenceThreshold(sensitivity.Load()))
 				for i := range found {
 					found[i].X += float64(req.zone.x)
 					found[i].Y += float64(req.zone.y)

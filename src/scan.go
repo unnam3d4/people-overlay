@@ -88,7 +88,7 @@ func prepareRegionFrame(src []byte,fullW,fullH int,reg scanRegion)([]float32,flo
  return prepareRegionFrameEnhanced(src,fullW,fullH,reg,false)
 }
 func prepareRegionFrameEnhanced(src []byte,fullW,fullH int,reg scanRegion,enhance bool)([]float32,float64,float64,float64){
- const n=640
+ n:=modelInputSize
  if fullW<1||fullH<1||reg.w<1||reg.h<1||reg.x<0||reg.y<0||
     reg.x+reg.w>fullW||reg.y+reg.h>fullH||len(src)<fullW*fullH*4{return nil,0,0,0}
  scale:=math.Min(float64(n)/float64(reg.w),float64(n)/float64(reg.h))

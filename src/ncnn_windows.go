@@ -1,4 +1,4 @@
-//go:build windows && ncnn
+//go:build windows && ncnn && !picodet
 package main
 
 import (

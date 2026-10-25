@@ -172,7 +172,7 @@ func benchmarkPredict(d *Detector, pixels []byte, w, h int, zone scanRegion, thr
 		return nil, tm, e
 	}
 	begun = time.Now()
-	found := decodePeople(raw, n, w, h, scale, px, py, threshold)
+	found := decodeActiveModel(raw, n, w, h, scale, px, py, threshold)
 	for i := range found {
 		found[i].X += float64(zone.x)
 		found[i].Y += float64(zone.y)
@@ -214,7 +214,7 @@ func runBenchmarkCLI(args []string) error {
 		if e != nil {
 			return e
 		}
-		return benchmarkWrite(args[2], map[string]interface{}{"width": w, "height": h, "detections": found, "times": tm, "network": 640})
+		return benchmarkWrite(args[2], map[string]interface{}{"width": w, "height": h, "detections": found, "times": tm, "network": modelInputSize})
 	}
 	if args[0] != "--benchmark" {
 		return fmt.Errorf("unknown benchmark command %s", args[0])
