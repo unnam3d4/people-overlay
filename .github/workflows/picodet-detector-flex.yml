@@ -1,0 +1,91 @@
+name: PicoDet flexible CCTV grid and detector-only Win7/10 offline candidate
+
+on:
+  push:
+    branches: [feature/picodet-detector-flexible-grid]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  test-bundle:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore same validated PicoDet v3 NCNN assets (build machine only)
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 40182589508
+          name: PeopleOverlay_PicoDet_Lite_v3_Win7_10_x86_x64_OFFLINE_TESTED
+          github-token: ${{ github.token }}
+          path: BASE
+      - name: Extract baseline donor from verified v3
+        shell: pwsh
+        run: |
+          Expand-Archive BASE/PeopleOverlay_PicoDet_Lite_v3_Win7_10_OFFLINE.zip -DestinationPath DONOR
+          New-Item -ItemType Directory -Force DIST,VERIFY | Out-Null
+      - name: Full Go unit/regression tests, 32 and 64 bit
+        shell: pwsh
+        working-directory: src
+        run: |
+          $env:CGO_ENABLED='0'
+          foreach ($arch in @('amd64','386')){
+            $env:GOARCH=$arch
+            go test -tags 'ncnn picodet' ./... -count=1
+            if ($LASTEXITCODE -ne 0) {throw "FAILED: PicoDet $arch unit tests"}
+          }
+      - name: Build offline Windows EXEs without other downloads
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED='0'
+          $env:GOOS='windows'
+          foreach ($spec in @(@('amd64','x64'),@('386','x86'))) {
+            $env:GOARCH=$spec[0]
+            $arch=$spec[1]
+            Push-Location src
+            go build -tags 'ncnn picodet' -trimpath -ldflags '-s -w -H windowsgui' -o "../new_$arch.exe" .
+            Pop-Location
+            if ($LASTEXITCODE -ne 0) {throw "FAILED: $arch compilation"}
+            python scripts/package_current.py --application "new_$arch.exe" --donor "DONOR/PeopleOverlay_PicoDet_Lite_v3_$arch.exe" --output "DIST/PeopleOverlay_PicoDet_Detector_FlexGrid_$arch.exe"
+            if ($LASTEXITCODE -ne 0){throw "FAILED: offline $arch pack"}
+          }
+      - name: Check real PicoDet persons and empty input, on x64 and x86
+        shell: pwsh
+        run: |
+          foreach ($arch in @('x64','x86')) {
+            $exe=(Resolve-Path "DIST/PeopleOverlay_PicoDet_Detector_FlexGrid_$arch.exe").Path
+            $out=Join-Path (Resolve-Path VERIFY).Path ("selftest_"+$arch+".json")
+            $p=Start-Process -FilePath $exe -ArgumentList @('--selftest',('"' + $out + '"')) -Wait -PassThru
+            if ($p.ExitCode -ne 0 -or !(Test-Path $out)) {
+              $log=Join-Path $env:LOCALAPPDATA 'PeopleOverlay/PeopleOverlay.log'
+              if (Test-Path $log){Get-Content $log -Tail 30}
+              throw "FAILED: real PicoDet selftest $arch"
+            }
+            $r=Get-Content $out -Raw|ConvertFrom-Json
+            if (!$r.passed -or $r.matched_people -ne 3 -or $r.blank_people -ne 0){
+              throw "FAILED: positive/negative detection $arch"
+            }
+          }
+      - name: Pack clearly experimental tested binaries and documentation
+        shell: pwsh
+        run: |
+          Copy-Item VERIFY/*.json DIST/
+          Copy-Item README-PICODET-FLEX.md DIST/
+          Copy-Item THIRD_PARTY_NOTICES.txt DIST/
+          Compress-Archive DIST/* PeopleOverlay_PicoDet_FlexGrid_DetectorOnly_Win7_10.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PeopleOverlay_PicoDet_FlexGrid_DetectorOnly_Offline_Win7_10_x86_x64
+          path: PeopleOverlay_PicoDet_FlexGrid_DetectorOnly_Win7_10.zip
+          retention-days: 30
+          if-no-files-found: error
