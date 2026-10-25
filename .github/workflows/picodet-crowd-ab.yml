@@ -1,0 +1,79 @@
+name: Compare PicoDet-S320 and v3.6.3 YOLOv8n with 12-48 people
+
+on:
+  push:
+    branches: [experiment/picodet-vs-yolo-crowd]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  density-test:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install fixture generator (build runner only)
+        run: python -m pip install Pillow==12.1.1
+      - name: Download unmodified published PicoDet x64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 40176361696
+          name: PeopleOverlay_PicoDet_S320_EXPERIMENTAL_Win7_10_x86_x64
+          github-token: ${{ github.token }}
+          path: BUNDLE_PICO
+      - name: Download unmodified published YOLO v3.6.3 binaries
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 40025809468
+          name: PeopleOverlay_v3_6_3_MULTI_MONITOR_OFFLINE_Win7_10_x64_x86
+          github-token: ${{ github.token }}
+          path: BUNDLE_YOLO
+      - name: Extract exact original EXEs without recompilation
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force TEST_EXE | Out-Null
+          Expand-Archive BUNDLE_PICO/PeopleOverlay_PicoDet_S320_EXPERIMENTAL_Offline_Win7_10.zip -DestinationPath EXTRACT_PICO
+          Expand-Archive BUNDLE_YOLO/PeopleOverlay_v3_6_3_MULTI_MONITOR_OFFLINE.zip -DestinationPath EXTRACT_YOLO
+          Copy-Item EXTRACT_PICO/PeopleOverlay_PicoDet_S320_x64.exe TEST_EXE/PicoDet.exe
+          Copy-Item EXTRACT_YOLO/PeopleOverlay_v3_YOLOv8n_x64.exe TEST_EXE/YOLOv8n.exe
+          Get-FileHash TEST_EXE/*.exe -Algorithm SHA256 | Format-Table
+      - name: Generate 3200x1800 frames with independently known 12 and 48 synthetic person boxes
+        run: python scripts/generate_crowd_ab.py --out FIXTURE
+      - name: Run actual native NCNN with full tracking and scheduler on identical labelled frames
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force RESULTS | Out-Null
+          foreach ($model in @('PicoDet','YOLOv8n')) {
+            foreach ($case in @('one_camera_12_people','grid_4x4_48_people')) {
+              Write-Host "RUN $model $case"
+              $exe = (Resolve-Path "TEST_EXE/$model.exe").Path
+              $manifest = (Resolve-Path "FIXTURE/$case.json").Path
+              $report = Join-Path (Resolve-Path RESULTS).Path "$model" + "__" + "$case" + ".json"
+              & $exe --benchmark $manifest $report
+              if ($LASTEXITCODE -ne 0 -or !(Test-Path $report)) {
+                $log = Join-Path $env:LOCALAPPDATA 'PeopleOverlay/PeopleOverlay.log'
+                if (Test-Path $log) {Get-Content $log -Tail 30}
+                throw "$model $case benchmark failed"
+              }
+            }
+          }
+      - name: Score annotated people and timing
+        shell: pwsh
+        run: |
+          python scripts/score_crowd_ab.py RESULTS
+          if ($LASTEXITCODE -ne 0) {throw 'scoring failed'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PicoDet_vs_YOLOv8n_3200px_12_and_48_people_results
+          path: |
+            RESULTS/
+            FIXTURE/*.json
+            FIXTURE/*.png
+          retention-days: 30
