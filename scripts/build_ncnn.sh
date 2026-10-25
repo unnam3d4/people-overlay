@@ -34,7 +34,7 @@ for config in "x64 x86_64-w64-mingw32" "x86 i686-w64-mingw32"; do
  if [[ ! -f "$lib" ]];then echo "Missing $lib";exit 1;fi
  mkdir -p "$ROOT/_output/$arch"
  "${prefix}-g++-posix" -std=c++11 -O2 -D_WIN32_WINNT=0x0601 -DWINVER=0x0601 \
-  -I"$install/include/ncnn" -shared "$ROOT/native/bridge.cpp" "$lib" \
+  -I"$install/include/ncnn" -shared "${BRIDGE_SOURCE:-$ROOT/native/bridge.cpp}" "$lib" \
   -Wl,--kill-at -static -static-libgcc -static-libstdc++ \
   -o "$ROOT/_output/$arch/ncnnbridge.dll"
  "${prefix}-objdump" -p "$ROOT/_output/$arch/ncnnbridge.dll" | grep "DLL Name:"
